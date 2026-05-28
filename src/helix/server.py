@@ -3,61 +3,55 @@ from helix.tools.trials import findTrials
 from helix.tools.pubmed import searchPapers
 from helix.tools.fda import lookupDrug
 from helix.tools.eligibility import matchEligibility
+from helix.tools.synthesis import synthesizeEvidence
 from helix.config import server
 
 mcp = FastMCP(server.name)
 
+
 @mcp.tool()
 async def find_trials(condition: str, location: str = None, limit: int = 10) -> list[dict]:
-    """
-    Find active clinical trials matching a medical condition.
-
-    Args:
-        condition: Medical condition (e.g. "Type 2 Diabetes")
-        location: Optional location filter (e.g. "London, UK")
-        limit: Number of results, default 10
-    """
+    """Find active clinical trials matching a medical condition."""
     return await findTrials(condition, location, limit)
+
 
 @mcp.tool()
 async def search_papers(topic: str, yearFrom: int = None, yearTo: int = None, limit: int = 10) -> list[dict]:
-    """
-    Search PubMed for peer-reviewed research papers.
-
-    Args:
-        topic: Research topic (e.g. "Alzheimer's disease treatment")
-        yearFrom: Start year filter (e.g. 2020)
-        yearTo: End year filter (e.g. 2025)
-        limit: Number of results, default 10
-    """
+    """Search PubMed for peer-reviewed research papers."""
     return await searchPapers(topic, yearFrom, yearTo, limit)
+
 
 @mcp.tool()
 async def lookup_drug(name: str, limit: int = 5) -> list[dict]:
-    """
-    Look up FDA drug information by brand or generic name.
-
-    Args:
-        name: Drug name (e.g. "metformin" or "Ozempic")
-        limit: Number of results, default 5
-    """
+    """Look up FDA drug information by brand or generic name."""
     return await lookupDrug(name, limit)
+
 
 @mcp.tool()
 async def match_eligibility(condition: str, age: int, location: str = None, limit: int = 10) -> list[dict]:
+    """Match a patient profile to clinical trials ranked by eligibility fit."""
+    return await matchEligibility(condition, age, location, limit)
+
+
+@mcp.tool()
+async def synthesize_evidence(condition: str, age: int, location: str = None) -> dict:
     """
-    Match a patient profile to clinical trials ranked by eligibility fit.
+    Cross-database clinical evidence synthesis.
+
+    Runs trial matching, PubMed research, and FDA drug lookup simultaneously
+    and returns a single fused report with per-trial eligibility reasoning.
 
     Args:
         condition: Medical condition (e.g. "Type 2 Diabetes")
         age: Patient age in years
-        location: Optional location filter
-        limit: Number of results, default 10
+        location: Optional location filter (e.g. "London, UK")
     """
-    return await matchEligibility(condition, age, location, limit)
+    return await synthesizeEvidence(condition, age, location)
+
 
 def run():
     mcp.run()
+
 
 if __name__ == "__main__":
     run()

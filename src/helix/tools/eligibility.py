@@ -29,33 +29,28 @@ def scoreMatch(trial: dict, age: int, condition: str) -> int:
     score = 40
 
     conditionWords = condition.lower().split()
-    titleLower = trial.get("title", "").lower()
-    summaryLower = trial.get("summary", "").lower()
+    title = trial.get("title", "").lower()
+    summary = trial.get("summary", "").lower()
 
-    titleMatches = sum(1 for word in conditionWords if word in titleLower)
-    summaryMatches = sum(1 for word in conditionWords if word in summaryLower)
+    score += min(sum(1 for w in conditionWords if w in title) * 15, 40)
+    score += min(sum(1 for w in conditionWords if w in summary) * 5, 20)
 
-    score += min(titleMatches * 15, 40)
-    score += min(summaryMatches * 5, 20)
+    phase = trial.get("phase", [])
+    if any(p in ["PHASE3", "PHASE4"] for p in phase):
+        score += 10
 
     return min(score, 100)
 
 
-async def matchEligibility(
-    condition: str, age: int, location: str = None, limit: int = 10
-) -> list[dict]:
-    try:
-        raw = await client.search(condition, location, limit * 2)
-    except Exception:
-        return []
-
+async def matchEligibility(condition: str, age: int, location: str = None, limit: int = 10):
+    raw = await client.search(condition, location, limit * 2)
     trials = formatter.shapeTrialResults(raw)
 
     scored = []
-    for trial in trials:
-        score = scoreMatch(trial, age, condition)
-        if score > 0:
-            scored.append({**trial, "matchScore": score})
+    for t in trials:
+        s = scoreMatch(t, age, condition)
+        if s > 0:
+            scored.append({**t, "matchScore": s})
 
-    scored.sort(key=lambda t: t["matchScore"], reverse=True)
+    scored.sort(key=lambda x: x["matchScore"], reverse=True)
     return scored[:limit]
