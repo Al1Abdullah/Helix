@@ -8,6 +8,10 @@ final_score = 100 * (
     0.15 * trial_phase_maturity
 )
 All sub-scores normalized to [0, 1]. Results cached 5 min.
+
+v1.1.0: eligibility_fit now computes age-window centrality instead of
+always returning 1.0. A patient at the center of the trial's age window
+scores 1.0; a patient at the edge scores 0.5; open enrollment scores 0.75.
 """
 import asyncio
 import time
@@ -57,18 +61,55 @@ def _hard_gate(trial: dict, age: int) -> tuple[bool, str]:
     return True, ""
 
 
+def _eligibility_fit_score(trial: dict, age: int) -> float:
+    """
+    Age-window centrality score for the 'eligibility_fit' vector component.
+
+    Intuition: a trial designed for ages 40-50 is more specifically tailored
+    to a 45-year-old patient than a trial designed for ages 18-80.
+    The patient at the center of the window gets 1.0; at the edge gets 0.5.
+    Open enrollment (no age constraints) gets 0.75 — inclusive but not tailored.
+
+    Range: [0.5, 1.0]. Never 0 because the hard gate already excluded
+    out-of-window patients — anything reaching here is eligible.
+    """
+    mn = trial.get("min_age")
+    mx = trial.get("max_age")
+
+    if mn is None and mx is None:
+        return 0.75  # open enrollment — inclusive but not patient-specific
+
+    lo = mn if mn is not None else 0
+    hi = mx if mx is not None else 120
+    center = (lo + hi) / 2.0
+    half_width = max((hi - lo) / 2.0, 1.0)
+
+    # Normalized distance: 0.0 at center, 1.0 at edges
+    dist = abs(age - center) / half_width
+    return round(max(0.5, 1.0 - dist * 0.5), 4)
+
+
 def buildTrialProfile(trial: dict, age: int, condition: str, papers: list, drugs: list) -> dict:
     cond_tok  = set((condition or "").lower().split())
     title_tok = set((trial.get("title") or "").lower().split())
     overlap   = len(cond_tok & title_tok)
     cond_m    = _norm(overlap, max(len(cond_tok), 1))
 
-    ev_hits   = sum(1 for p in papers if isinstance(p, dict) and (set((p.get("title") or "").lower().split()) & cond_tok))
-    ev_m      = _norm(ev_hits, max(len(papers), 1))
+    # Evidence support: count papers whose title shares tokens with condition
+    # Also checks abstract if populated (v1.1.0 fetches real abstracts)
+    ev_hits = 0
+    for p in papers:
+        if not isinstance(p, dict):
+            continue
+        title_match = bool(set((p.get("title") or "").lower().split()) & cond_tok)
+        abstract_match = bool(set((p.get("abstract") or "").lower().split()) & cond_tok)
+        if title_match or abstract_match:
+            ev_hits += 1
+    ev_m = _norm(ev_hits, max(len(papers), 1))
 
-    phase     = trial.get("phase") or []
-    phase_m   = _phase_score(phase)
-    elig_m    = 1.0
+    phase   = trial.get("phase") or []
+    phase_m = _phase_score(phase)
+    elig_m  = _eligibility_fit_score(trial, age)  # v1.1.0: was hardcoded 1.0
 
     score = round(100.0 * (
         WEIGHTS["condition_match"]        * cond_m
@@ -85,9 +126,9 @@ def buildTrialProfile(trial: dict, age: int, condition: str, papers: list, drugs
         age_pen = round((age - mx) / max(age, 1), 3)
 
     flags = []
-    if cond_m    < 0.2: flags.append("LOW_CONDITION_MATCH")
-    if phase_m   <= 0.3: flags.append("EARLY_STAGE_TRIAL")
-    if ev_m      < 0.1: flags.append("LOW_EVIDENCE_SUPPORT")
+    if cond_m  < 0.2:  flags.append("LOW_CONDITION_MATCH")
+    if phase_m <= 0.3:  flags.append("EARLY_STAGE_TRIAL")
+    if ev_m    < 0.1:  flags.append("LOW_EVIDENCE_SUPPORT")
 
     return TrialProfile(
         id=trial.get("id") or "",

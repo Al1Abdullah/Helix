@@ -1,0 +1,15 @@
+services:
+  helix-api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - PUBMED_EMAIL=${PUBMED_EMAIL:-helix@example.com}
+      - PUBMED_API_KEY=${PUBMED_API_KEY:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx,sys; r=httpx.get('http://localhost:8000/health',timeout=5); sys.exit(0 if r.status_code==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

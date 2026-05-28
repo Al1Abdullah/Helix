@@ -4,12 +4,14 @@
 
 **Clinical evidence synthesis engine — free, no API key, production-grade.**
 
+[![CI](https://github.com/Al1Abdullah/Helix/actions/workflows/ci.yml/badge.svg)](https://github.com/Al1Abdullah/Helix/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-111111?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111111?style=flat-square)](LICENSE)
 [![MCP Compatible](https://img.shields.io/badge/MCP-compatible-111111?style=flat-square)](https://modelcontextprotocol.io)
 [![REST API](https://img.shields.io/badge/REST_API-:8000-111111?style=flat-square)](#rest-api)
+[![Docker Ready](https://img.shields.io/badge/docker-ready-111111?style=flat-square&logo=docker&logoColor=white)](Dockerfile)
 [![No API Key](https://img.shields.io/badge/no_API_key-required-111111?style=flat-square)](#data-sources)
-[![Version](https://img.shields.io/badge/version-1.0.0-111111?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.0-111111?style=flat-square)](CHANGELOG.md)
 
 ```
   Claude · GPT · Gemini · Copilot      curl · Python · any HTTP client
@@ -44,6 +46,13 @@ pip install -e .
 python tests/tools/testSynthesis.py
 ```
 
+### Docker
+
+```bash
+docker compose up          # REST API on :8000
+# → http://localhost:8000/docs
+```
+
 ---
 
 ## REST API
@@ -59,7 +68,7 @@ helix-api          # starts on :8000
 | `POST` | `/synthesize` | Full synthesis with scored, explainable profiles |
 | `POST` | `/eligibility` | Match patient to trials by age + condition |
 | `GET` | `/trials` | Search ClinicalTrials.gov |
-| `GET` | `/papers` | Search PubMed |
+| `GET` | `/papers` | Search PubMed (with full abstracts) |
 | `GET` | `/drugs` | Search openFDA drug labels |
 | `GET` | `/cache/stats` | Inspect cache state |
 | `DELETE` | `/cache` | Flush all caches |
@@ -84,13 +93,11 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
-### MCP Tools
-
 | Tool | Description |
 |------|-------------|
 | `synthesize_evidence` | Full cross-database synthesis with scored, explainable profiles |
 | `find_trials` | Search ClinicalTrials.gov for recruiting trials |
-| `search_papers` | Search PubMed by topic + year range |
+| `search_papers` | Search PubMed by topic + year range (full abstracts) |
 | `lookup_drug` | FDA drug label lookup |
 | `match_eligibility` | Pre-filter trials by patient age + condition |
 | `health_check` | Live API connectivity + latency report |
@@ -101,14 +108,22 @@ Add to `claude_desktop_config.json`:
 
 ```
 final_score = 100 × (
-    0.35 × condition_match       +
-    0.30 × eligibility_fit       +
-    0.20 × evidence_support      +
-    0.15 × trial_phase_maturity
+    0.35 × condition_match       +  # token overlap: condition ↔ trial title
+    0.30 × eligibility_fit       +  # age-window centrality (1.0=center, 0.5=edge)
+    0.20 × evidence_support      +  # PubMed papers matching condition
+    0.15 × trial_phase_maturity     # Phase 3/4=1.0, Phase 2=0.6, Phase 1=0.3
 )
 ```
 
-All sub-scores normalized to [0, 1]. Full `score_vector` and `explainability_vector` returned with every profile — every score is auditable.
+All sub-scores normalized to [0, 1]. Full `score_vector` and `explainability_vector`
+returned with every profile — every score is fully auditable.
+
+### eligibility_fit (v1.1.0)
+
+A patient at the **center** of a trial's age window scores **1.0**. A patient at the
+**edge** scores **0.5**. Open enrollment (no age constraints) scores **0.75**.
+Trials that passed the hard gate but are less tailored to this specific patient
+age profile are naturally ranked lower.
 
 ---
 
@@ -134,7 +149,7 @@ src/helix/
 ├── config/             Configuration (URLs, weights, TTLs)
 ├── clients/            Raw API clients (retry + WAF bypass)
 │   ├── trialsClient.py     curl_cffi Chrome impersonation
-│   ├── pubmedClient.py     httpx + retry
+│   ├── pubmedClient.py     httpx + retry + efetch abstracts
 │   └── fdaClient.py        httpx + retry
 ├── tools/              Business logic layer (cached)
 │   ├── synthesis.py        Vector scoring pipeline
@@ -142,6 +157,12 @@ src/helix/
 │   ├── trials.py / pubmed.py / fda.py / health.py
 └── utils/
     └── formatter.py        API response normalizer
+tests/
+├── unit/               Fast unit tests (no network, CI-safe)
+│   ├── test_formatter.py
+│   ├── test_cache.py
+│   └── test_scoring.py
+└── tools/              Live smoke tests (require network)
 ```
 
 ---
