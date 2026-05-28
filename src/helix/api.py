@@ -8,7 +8,7 @@ from typing import Literal, Optional
 import uvicorn
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from helix.tools.synthesis import synthesizeEvidence
 from helix.tools.trials import findTrials
 from helix.tools.pubmed import searchPapers
@@ -50,17 +50,17 @@ _WEIGHT_DESCRIPTIONS = {
 
 
 class SynthesizeRequest(BaseModel):
-    condition: str
-    age: int
+    condition: str = Field(..., min_length=1, max_length=300)
+    age: int = Field(..., ge=0, le=130)
     location: Optional[str] = None
     sex: Optional[Literal["MALE", "FEMALE"]] = None
 
 
 class EligibilityRequest(BaseModel):
-    condition: str
-    age: int
+    condition: str = Field(..., min_length=1, max_length=300)
+    age: int = Field(..., ge=0, le=130)
     location: Optional[str] = None
-    limit: int = 10
+    limit: int = Field(10, ge=1, le=50)
     sex: Optional[Literal["MALE", "FEMALE"]] = None
 
 
@@ -119,6 +119,7 @@ async def synthesize(req: SynthesizeRequest):
     Full cross-database synthesis with scored, explainable trial profiles.
     Abbreviations (T2D, NSCLC, COPD, etc.) are automatically expanded.
     Response includes clinicalInsight.expanded_from when expansion occurred.
+    Sex-mismatched trials are reported in excludedTrials with their reason.
     """
     return await synthesizeEvidence(req.condition, req.age, req.location, req.sex)
 
@@ -133,17 +134,18 @@ async def eligibility(req: EligibilityRequest):
 
 @app.get("/trials", tags=["Data"])
 async def trials(
-    condition: str = Query(...),
+    condition: str = Query(..., min_length=1, max_length=300),
     location: Optional[str] = Query(None),
     limit: int = Query(10, ge=1, le=50),
+    sex: Optional[Literal["MALE", "FEMALE"]] = Query(None),
 ):
     """Active recruiting trials on ClinicalTrials.gov. Abbreviations auto-expanded."""
-    return await findTrials(condition, location, limit)
+    return await findTrials(condition, location, limit, sex)
 
 
 @app.get("/papers", tags=["Data"])
 async def papers(
-    topic: str = Query(...),
+    topic: str = Query(..., min_length=1, max_length=300),
     yearFrom: Optional[int] = Query(None),
     yearTo: Optional[int] = Query(None),
     limit: int = Query(10, ge=1, le=50),
@@ -154,7 +156,7 @@ async def papers(
 
 @app.get("/drugs", tags=["Data"])
 async def drugs(
-    name: str = Query(...),
+    name: str = Query(..., min_length=1, max_length=200),
     limit: int = Query(5, ge=1, le=20),
 ):
     """FDA drug label information."""

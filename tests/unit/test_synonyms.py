@@ -32,3 +32,22 @@ def test_empty_string_passthrough():
 
 def test_ra_rheumatoid_arthritis():
     assert expand("RA") == "Rheumatoid Arthritis"
+
+def test_none_input_passthrough():
+    """expand(None) must return None without raising."""
+    assert expand(None) is None
+
+def test_whitespace_only_passthrough():
+    """expand with only whitespace should not match anything."""
+    result = expand("   ")
+    assert result == "   "
+
+def test_multi_word_alias():
+    """Multi-word aliases like 'type2 diabetes' must expand correctly."""
+    assert expand("type2 diabetes") == "Type 2 Diabetes"
+
+def test_expand_is_idempotent():
+    """Calling expand twice on an already-expanded name is a no-op."""
+    first = expand("T2D")
+    second = expand(first)
+    assert first == second

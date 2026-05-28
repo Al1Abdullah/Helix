@@ -64,8 +64,6 @@ class Formatter:
                 "contact_email": contact_info.get("email") or "",
                 # URL
                 "url": f"https://clinicaltrials.gov/study/{nct_id}" if nct_id else "",
-                # Raw for debug access (never crash on missing keys)
-                "raw": study,
             })
 
         return results

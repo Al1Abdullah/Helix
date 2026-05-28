@@ -7,7 +7,7 @@ try:
     from importlib.metadata import version as _pkg_version
     _VERSION = _pkg_version("helix")
 except Exception:
-    _VERSION = "1.2.0"
+    _VERSION = "1.3.0"
 
 
 class TrialsConfig:

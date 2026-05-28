@@ -95,6 +95,6 @@ class ServiceHealth(BaseModel):
 
 class HealthReport(BaseModel):
     status: str
-    version: str = "1.0.0"
+    version: str = ""
     services: dict[str, ServiceHealth] = Field(default_factory=dict)
     timestamp: str = ""

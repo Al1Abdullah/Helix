@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.4.0] — 2026-05-29
+
+### Fixed
+- **Sex exclusions now visible in `excludedTrials`** — `synthesizeEvidence` now lets `_hard_gate` be the sole sex authority, ensuring sex-rejected trials appear in `excludedTrials` with reason.
+- **Version fallback was stale** — Fixed fallback `_VERSION` to `"1.3.0"`.
+- **`HealthReport` model version default** — Changed to `""`.
+- **`formatter.py` leaked raw API response** — Removed `"raw": study` field from trial results.
+
+### Added
+- **`sex` filter on `GET /trials`** — Added parity with other endpoints.
+- **Input validation** — Enforced `age` in `[0, 130]` and `condition` length `[1, 300]` across REST and MCP.
+- **`Optional[str]` type hints in `server.py`** — MCP tools now use correct type hints.
+- **`.env.example` populated** — Documented PubMed env vars.
+- **8 new unit tests** covering sex transparency, boundary ages, and memory hygiene.
+
 ## [1.3.0] — 2026-05-28
 
 ### Fixed

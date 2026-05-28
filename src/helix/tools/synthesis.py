@@ -184,8 +184,11 @@ async def synthesizeEvidence(
         return cached
 
     t0 = time.monotonic()
+    # Pass sex=None so ALL trials (including sex-mismatched) come back from
+    # matchEligibility. The _hard_gate below is the sole sex authority inside
+    # synthesis, ensuring sex-rejected trials appear in excludedTrials.
     trials, papers = await asyncio.gather(
-        matchEligibility(condition, age, location, limit=8, sex=sex),
+        matchEligibility(condition, age, location, limit=16, sex=None),
         searchPapers(condition, limit=5),
     )
 

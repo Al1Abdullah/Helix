@@ -1,3 +1,4 @@
+from typing import Optional
 from mcp.server.fastmcp import FastMCP
 from helix.tools.trials import findTrials
 from helix.tools.pubmed import searchPapers
@@ -11,7 +12,12 @@ mcp = FastMCP(server_config.name)
 
 
 @mcp.tool()
-async def find_trials(condition: str, location: str = None, limit: int = 10) -> list[dict]:
+async def find_trials(
+    condition: str,
+    location: Optional[str] = None,
+    limit: int = 10,
+    sex: Optional[str] = None,
+) -> list[dict]:
     """Find active clinical trials matching a medical condition.
     Abbreviations like T2D, NSCLC, COPD are automatically expanded.
 
@@ -19,12 +25,20 @@ async def find_trials(condition: str, location: str = None, limit: int = 10) -> 
         condition: Medical condition or abbreviation (e.g. "T2D", "Type 2 Diabetes").
         location: Optional location filter (e.g. "Boston, MA").
         limit: Max results (default 10).
+        sex: Optional sex filter: MALE or FEMALE.
     """
-    return await findTrials(condition, location, limit)
+    if not condition or not condition.strip():
+        return []
+    return await findTrials(condition, location, limit, sex)
 
 
 @mcp.tool()
-async def search_papers(topic: str, yearFrom: int = None, yearTo: int = None, limit: int = 10) -> list[dict]:
+async def search_papers(
+    topic: str,
+    yearFrom: Optional[int] = None,
+    yearTo: Optional[int] = None,
+    limit: int = 10,
+) -> list[dict]:
     """Search PubMed for peer-reviewed research papers.
     Abbreviations like T2D, NSCLC, COPD are automatically expanded.
 
@@ -34,12 +48,16 @@ async def search_papers(topic: str, yearFrom: int = None, yearTo: int = None, li
         yearTo: End year filter (optional).
         limit: Max results (default 10).
     """
+    if not topic or not topic.strip():
+        return []
     return await searchPapers(topic, yearFrom, yearTo, limit)
 
 
 @mcp.tool()
 async def lookup_drug(name: str, limit: int = 5) -> list[dict]:
     """Look up FDA drug information by brand or generic name."""
+    if not name or not name.strip():
+        return []
     return await lookupDrug(name, limit)
 
 
@@ -47,20 +65,24 @@ async def lookup_drug(name: str, limit: int = 5) -> list[dict]:
 async def match_eligibility(
     condition: str,
     age: int,
-    location: str = None,
+    location: Optional[str] = None,
     limit: int = 10,
-    sex: str = None,
+    sex: Optional[str] = None,
 ) -> list[dict]:
     """Match a patient profile to clinical trials ranked by eligibility fit.
     Abbreviations like T2D, NSCLC, COPD are automatically expanded.
 
     Args:
         condition: Medical condition or abbreviation (e.g. "T2D", "NSCLC").
-        age: Patient age in years.
+        age: Patient age in years (0–130).
         location: Optional location filter (e.g. "Boston, MA").
         limit: Max results (default 10).
         sex: Optional patient sex filter: MALE or FEMALE.
     """
+    if not condition or not condition.strip():
+        return []
+    if not (0 <= age <= 130):
+        return []
     return await matchEligibility(condition, age, location, limit, sex)
 
 
@@ -68,21 +90,26 @@ async def match_eligibility(
 async def synthesize_evidence(
     condition: str,
     age: int,
-    location: str = None,
-    sex: str = None,
+    location: Optional[str] = None,
+    sex: Optional[str] = None,
 ) -> dict:
     """Cross-database clinical evidence synthesis.
     Queries ClinicalTrials.gov, PubMed, and openFDA concurrently.
     Returns scored, ranked trials with full explainability vectors.
     Abbreviations like T2D, NSCLC, COPD are automatically expanded.
     Response includes expanded_from when an abbreviation was resolved.
+    Sex-mismatched trials appear in excludedTrials with their reason.
 
     Args:
         condition: Medical condition or abbreviation (e.g. "T2D", "NSCLC").
-        age: Patient age in years.
+        age: Patient age in years (0–130).
         location: Optional location filter (e.g. "London, UK").
         sex: Optional patient sex filter: MALE or FEMALE.
     """
+    if not condition or not condition.strip():
+        return {}
+    if not (0 <= age <= 130):
+        return {}
     return await synthesizeEvidence(condition, age, location, sex)
 
 

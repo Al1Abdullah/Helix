@@ -1,6 +1,6 @@
 [project]
 name = "helix"
-version = "1.3.0"
+version = "1.4.0"
 description = "Clinical evidence synthesis engine — ClinicalTrials.gov, PubMed, and openFDA in one API"
 readme = "README.md"
 license = { text = "MIT" }

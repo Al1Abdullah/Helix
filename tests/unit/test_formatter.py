@@ -82,3 +82,14 @@ def test_shape_drugs_fields(sample_fda_response):
 
 def test_shape_drugs_empty():
     assert Formatter().shapeDrugResults({"results": []}) == []
+
+def test_shape_trials_no_raw_field(sample_trials_response):
+    """Shaped trials must not contain the raw API response field (memory hygiene)."""
+    results = Formatter().shapeTrialResults(sample_trials_response)
+    for trial in results:
+        assert "raw" not in trial, "raw field must not be present in shaped trial dicts"
+
+def test_shape_trials_sex_field_present(sample_trials_response):
+    """Shaped trial must include a sex field for downstream sex filtering."""
+    t = Formatter().shapeTrialResults(sample_trials_response)[0]
+    assert "sex" in t

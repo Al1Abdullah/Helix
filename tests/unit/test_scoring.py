@@ -170,3 +170,39 @@ def test_build_insight_no_expansion():
     profiles = [{"final_score": 75.0}]
     r = buildClinicalInsight(profiles, "Type 2 Diabetes", expanded_from=None)
     assert r["expanded_from"] is None
+
+# --- sex exclusion transparency (v1.4.0) ---
+
+def test_hard_gate_trial_female_patient_male():
+    """Inverse sex mismatch: trial requires FEMALE, patient is MALE."""
+    t = {"id": "NCT001", "title": "Test", "sex": "FEMALE"}
+    ok, reason = _hard_gate(t, 45, sex="MALE")
+    assert ok is False
+    assert "sex mismatch" in reason
+    assert "FEMALE" in reason
+    assert "MALE" in reason
+
+def test_hard_gate_no_sex_field_defaults_to_all():
+    """Trial with no sex field should be treated as ALL and pass any patient."""
+    t = {"id": "NCT001", "title": "Test"}  # no "sex" key
+    ok, _ = _hard_gate(t, 45, sex="MALE")
+    assert ok is True
+
+def test_build_insight_zero_top_score_when_empty():
+    """Empty profile list should return top_score=0.0, not crash."""
+    r = buildClinicalInsight([], "NSCLC", expanded_from="nsclc")
+    assert r["top_score"] == 0.0
+    assert r["expanded_from"] == "nsclc"
+    assert r["condition"] == "NSCLC"
+
+def test_hard_gate_age_exactly_at_min_passes():
+    """Age exactly equal to min_age is valid (inclusive boundary)."""
+    t = {"id": "NCT001", "title": "Test", "min_age": 18, "max_age": 65}
+    ok, _ = _hard_gate(t, 18)
+    assert ok is True
+
+def test_hard_gate_age_exactly_at_max_passes():
+    """Age exactly equal to max_age is valid (inclusive boundary)."""
+    t = {"id": "NCT001", "title": "Test", "min_age": 18, "max_age": 65}
+    ok, _ = _hard_gate(t, 65)
+    assert ok is True
