@@ -85,31 +85,47 @@ def test_hard_gate_no_age_constraints():
     ok, _ = _hard_gate(t, 99)
     assert ok is True
 
+def test_hard_gate_sex_mismatch():
+    t = {"id": "NCT001", "title": "Test", "sex": "MALE"}
+    ok, reason = _hard_gate(t, 45, sex="FEMALE")
+    assert ok is False
+    assert "sex mismatch" in reason
+
+def test_hard_gate_sex_all_passes_any_patient():
+    t = {"id": "NCT001", "title": "Test", "sex": "ALL"}
+    ok, _ = _hard_gate(t, 45, sex="FEMALE")
+    assert ok is True
+
+def test_hard_gate_sex_match_passes():
+    t = {"id": "NCT001", "title": "Test", "sex": "FEMALE"}
+    ok, _ = _hard_gate(t, 45, sex="FEMALE")
+    assert ok is True
+
+def test_hard_gate_no_sex_filter_skips_check():
+    t = {"id": "NCT001", "title": "Test", "sex": "MALE"}
+    ok, _ = _hard_gate(t, 45, sex=None)
+    assert ok is True
+
 
 # --- _eligibility_fit_score ---
 
 def test_elig_fit_center():
-    """Patient at exact center of window → 1.0."""
     t = {"min_age": 30, "max_age": 50}
     assert _eligibility_fit_score(t, 40) == 1.0
 
 def test_elig_fit_at_min_edge():
-    """Patient at minimum edge → 0.5."""
     t = {"min_age": 30, "max_age": 50}
     assert _eligibility_fit_score(t, 30) == 0.5
 
 def test_elig_fit_at_max_edge():
-    """Patient at maximum edge → 0.5."""
     t = {"min_age": 30, "max_age": 50}
     assert _eligibility_fit_score(t, 50) == 0.5
 
 def test_elig_fit_open_enrollment():
-    """No age constraints → 0.75 (inclusive but not tailored)."""
     t = {"min_age": None, "max_age": None}
     assert _eligibility_fit_score(t, 45) == 0.75
 
 def test_elig_fit_range_is_0_5_to_1():
-    """Score is always in [0.5, 1.0] for any valid in-window age."""
     t = {"min_age": 18, "max_age": 80}
     for age in [18, 30, 49, 65, 80]:
         score = _eligibility_fit_score(t, age)
@@ -141,3 +157,16 @@ def test_build_insight_scores():
     assert r["top_score"] == 80.0
     assert r["average_score"] == 70.0
     assert r["condition"] == "cancer"
+
+def test_build_insight_expanded_from_set():
+    """expanded_from is passed through to the response when abbreviation was resolved."""
+    profiles = [{"final_score": 75.0}]
+    r = buildClinicalInsight(profiles, "Type 2 Diabetes", expanded_from="T2D")
+    assert r["expanded_from"] == "T2D"
+    assert r["condition"] == "Type 2 Diabetes"
+
+def test_build_insight_no_expansion():
+    """expanded_from is None when no abbreviation was resolved."""
+    profiles = [{"final_score": 75.0}]
+    r = buildClinicalInsight(profiles, "Type 2 Diabetes", expanded_from=None)
+    assert r["expanded_from"] is None

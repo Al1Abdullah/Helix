@@ -29,9 +29,11 @@ jobs:
 
       - name: Verify imports
         run: |
-          python -c "from helix.models import Trial, TrialProfile, SynthesisResult, HealthReport"
+          python -c "from helix.models import Trial, TrialProfile, SynthesisResult, HealthReport, ClinicalInsight"
           python -c "from helix.cache import synthesis_cache, trials_cache, papers_cache, drugs_cache"
           python -c "from helix.logger import get_logger"
           python -c "from helix.api import app"
           python -c "from helix.tools.health import checkHealth"
-          python -c "from helix.tools.synthesis import _eligibility_fit_score"
+          python -c "from helix.tools.synthesis import _eligibility_fit_score, buildClinicalInsight"
+          python -c "from helix.utils.synonyms import expand; assert expand('T2D') == 'Type 2 Diabetes', 'synonym expansion broken'"
+          python -c "from helix.models import ClinicalInsight; c = ClinicalInsight(condition='x', expanded_from='y'); assert c.expanded_from == 'y'"

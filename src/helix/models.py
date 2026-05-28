@@ -72,6 +72,7 @@ class ClinicalInsight(BaseModel):
     top_score: float = 0.0
     average_score: float = 0.0
     condition: str = ""
+    expanded_from: Optional[str] = None  # v1.3.0: set when input was an abbreviation
 
 
 class ExcludedTrial(BaseModel):

@@ -1,5 +1,6 @@
 from helix.clients.trialsClient import TrialsClient
 from helix.utils.formatter import Formatter
+from helix.utils.synonyms import expand
 from helix.cache import trials_cache
 from helix.logger import get_logger
 
@@ -9,7 +10,8 @@ _log    = get_logger(__name__)
 
 
 async def findTrials(condition: str, location: str = None, limit: int = 10) -> list[dict]:
-    """Find active clinical trials. Cached 3 min. Never raises."""
+    """Find active clinical trials. Synonym-expanded, cached 3 min. Never raises."""
+    condition = expand(condition)
     key = f"trials:{condition.lower().strip()}:{location or ''}:{limit}"
     cached = await trials_cache.get(key)
     if cached is not None:

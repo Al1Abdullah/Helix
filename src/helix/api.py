@@ -18,6 +18,7 @@ from helix.tools.health import checkHealth
 from helix.cache import synthesis_cache, trials_cache, papers_cache, drugs_cache
 from helix.config import server as server_config
 from helix.config.weights import WEIGHTS
+from helix.utils.synonyms import _MAP as _SYNONYM_MAP
 
 
 @asynccontextmanager
@@ -40,13 +41,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_SEX_DESCRIPTION = "Optional patient sex filter: MALE or FEMALE. Trials requiring the opposite sex are excluded."
-
 _WEIGHT_DESCRIPTIONS = {
-    "condition_match":       "Token overlap between patient condition and trial title (0–1)",
-    "eligibility_fit":       "Age-window centrality: 1.0=patient at window center, 0.5=at edge, 0.75=open enrollment",
-    "evidence_support":      "Fraction of PubMed papers whose title or abstract mentions the condition (0–1)",
-    "trial_phase_maturity":  "Phase 3/4=1.0, Phase 2=0.6, Phase 1=0.3, unknown=0.5",
+    "condition_match":      "Token overlap between patient condition and trial title (0–1)",
+    "eligibility_fit":      "Age-window centrality: 1.0=center, 0.5=edge, 0.75=open enrollment",
+    "evidence_support":     "Fraction of PubMed papers matching condition keywords (0–1)",
+    "trial_phase_maturity": "Phase 3/4=1.0, Phase 2=0.6, Phase 1=0.3, unknown=0.5",
 }
 
 
@@ -65,6 +64,8 @@ class EligibilityRequest(BaseModel):
     sex: Optional[Literal["MALE", "FEMALE"]] = None
 
 
+# ── System ──────────────────────────────────────────────────────────────────
+
 @app.get("/health", tags=["System"])
 async def health():
     """Ping all 3 APIs and report latency per service."""
@@ -73,14 +74,23 @@ async def health():
 
 @app.get("/score-weights", tags=["System"])
 async def score_weights():
-    """
-    Return the scoring weight vector used to rank clinical trials.
-    Enables API consumers to understand and explain trial rankings.
-    """
+    """Return the scoring weight vector, formula, and component descriptions."""
     return {
         "weights": WEIGHTS,
         "formula": "final_score = 100 * sum(weight_i * component_i)",
         "descriptions": _WEIGHT_DESCRIPTIONS,
+    }
+
+
+@app.get("/synonyms", tags=["System"])
+async def synonyms():
+    """
+    Return all known condition abbreviations and their canonical expansions.
+    Useful for UI autocomplete, input validation, and debugging synonym expansion.
+    """
+    return {
+        "total": len(_SYNONYM_MAP),
+        "mappings": {k: v for k, v in sorted(_SYNONYM_MAP.items())},
     }
 
 
@@ -101,23 +111,25 @@ async def clear_cache():
     return {"cleared": True}
 
 
+# ── Evidence ─────────────────────────────────────────────────────────────────
+
 @app.post("/synthesize", tags=["Evidence"])
 async def synthesize(req: SynthesizeRequest):
     """
     Full cross-database synthesis with scored, explainable trial profiles.
-    Abbreviations like T2D, NSCLC, COPD are automatically expanded.
+    Abbreviations (T2D, NSCLC, COPD, etc.) are automatically expanded.
+    Response includes clinicalInsight.expanded_from when expansion occurred.
     """
     return await synthesizeEvidence(req.condition, req.age, req.location, req.sex)
 
 
 @app.post("/eligibility", tags=["Evidence"])
 async def eligibility(req: EligibilityRequest):
-    """
-    Match patient profile to trials by condition, age, and optional sex.
-    Abbreviations are automatically expanded.
-    """
+    """Match patient profile to trials by condition, age, and optional sex."""
     return await matchEligibility(req.condition, req.age, req.location, req.limit, req.sex)
 
+
+# ── Data ──────────────────────────────────────────────────────────────────────
 
 @app.get("/trials", tags=["Data"])
 async def trials(
@@ -125,7 +137,7 @@ async def trials(
     location: Optional[str] = Query(None),
     limit: int = Query(10, ge=1, le=50),
 ):
-    """Active recruiting trials on ClinicalTrials.gov."""
+    """Active recruiting trials on ClinicalTrials.gov. Abbreviations auto-expanded."""
     return await findTrials(condition, location, limit)
 
 
@@ -136,7 +148,7 @@ async def papers(
     yearTo: Optional[int] = Query(None),
     limit: int = Query(10, ge=1, le=50),
 ):
-    """PubMed peer-reviewed research papers."""
+    """PubMed peer-reviewed research papers. Abbreviations auto-expanded."""
     return await searchPapers(topic, yearFrom, yearTo, limit)
 
 

@@ -1,74 +1,67 @@
 # Changelog
 
+## [1.3.0] — 2026-05-28
+
+### Fixed
+- **MCP tool parity gap** — `synthesize_evidence` and `match_eligibility` MCP tools
+  were missing the `sex` parameter added to the REST API in v1.2.0. Claude Desktop
+  users could not apply sex filtering via MCP. Both tools now accept `sex: str = None`
+  and pass it through to the underlying functions.
+- **Synonym expansion gap in `findTrials` and `searchPapers`** — `expand()` was
+  applied in `synthesis.py` and `eligibility.py` but not in `trials.py` or
+  `pubmed.py`. Calling `find_trials("T2D")` directly (via MCP or `GET /trials`)
+  bypassed expansion and queried the API with the raw abbreviation. Fixed.
+
+### Added
+- **`expanded_from` field in `ClinicalInsight`** — When a condition abbreviation is
+  expanded (e.g. "T2D" → "Type 2 Diabetes"), the original input is now recorded in
+  `clinicalInsight.expanded_from` in the synthesis response. `null` when no expansion
+  occurred. Makes the API self-documenting and aids debugging.
+- **`GET /synonyms`** — Returns the full sorted abbreviation → canonical name
+  mapping (65+ entries). Useful for UI autocomplete, client-side validation, and
+  verifying that a given abbreviation is recognized by Helix.
+- **4 new `_hard_gate` sex tests** in `tests/unit/test_scoring.py` — covers sex
+  mismatch rejection, ALL passes any patient, sex match passes, no filter skips check.
+- **2 new `buildClinicalInsight` tests** — verify `expanded_from` is populated and
+  that `None` is returned correctly when no expansion occurred.
+- **CI verify imports** now asserts `expand("T2D") == "Type 2 Diabetes"` and that
+  `ClinicalInsight.expanded_from` is accessible, catching regressions on both.
+
+---
+
 ## [1.2.0] — 2026-05-28
 
 ### Fixed
 - **`ServerConfig.version` hardcoded to `"1.0.0"`** — Now reads dynamically from
-  package metadata via `importlib.metadata`. `/health`, `/docs`, and all API
-  responses now report the correct version automatically on every release.
+  package metadata via `importlib.metadata`.
 
 ### Added
-- **Condition synonym expansion** (`src/helix/utils/synonyms.py`) — 65+ medical
-  abbreviation and alias mappings applied before any external API call. Queries for
-  "T2D", "NSCLC", "COPD", "afib", "RA", "HCV" etc. are transparently expanded to
-  their canonical full names. Zero new dependencies — pure stdlib dict lookup.
-- **Sex eligibility parameter** — `synthesizeEvidence` and `matchEligibility` now
-  accept an optional `sex` argument (`"MALE"` or `"FEMALE"`). Trials with a sex
-  constraint that doesn't match the patient are excluded by the hard gate and
-  reported in `excludedTrials` with reason `sex mismatch`. REST endpoints
-  `/synthesize` and `/eligibility` accept `sex` in the request body.
-- **`GET /score-weights`** — Returns the scoring weight vector, the formula, and
-  plain-English descriptions of every component. Lets API consumers explain trial
-  rankings without reading source code.
-- **Unit tests for synonym expansion** (`tests/unit/test_synonyms.py`) — 10 pure-
-  Python assertions covering uppercase, lowercase, mixed-case, whitespace stripping,
-  and passthrough behavior.
+- **Condition synonym expansion** (`src/helix/utils/synonyms.py`) — 65+ mappings.
+- **Sex eligibility parameter** on `synthesizeEvidence` and `matchEligibility`.
+- **`GET /score-weights`** endpoint.
+- **10 unit tests** for synonym expansion.
 
 ---
 
 ## [1.1.0] — 2025-06-02
 
 ### Fixed
-- **`eligibility_fit` hardcoded to `1.0`** — This component carries 30% weight
-  in the scoring model but always returned full marks, making it meaningless.
-  Now computes **age-window centrality**: patient at window center = 1.0,
-  patient at window edge = 0.5, open enrollment = 0.75. Range: [0.5, 1.0].
-- **PubMed abstracts always empty** — `esummary` endpoint does not return
-  abstract text. Added `fetchAbstracts()` via `efetch` (XML, stdlib only,
-  no extra deps). Abstracts now populated in all paper results, capped at 800 chars.
-  Evidence support scoring now also checks abstract text, improving match accuracy.
+- `eligibility_fit` hardcoded to `1.0` (now age-window centrality).
+- PubMed abstracts always empty (now fetched via efetch XML).
 
 ### Added
-- **GitHub Actions CI** (`.github/workflows/ci.yml`) — runs unit tests on
-  Python 3.11 and 3.12 on every push and PR; also verifies all public imports
-- **Docker support** — `Dockerfile` (slim, layer-cached, with HEALTHCHECK)
-  and `docker-compose.yml`; start with `docker compose up`
-- **Real unit test suite** (`tests/unit/`) — 40+ assertions across formatter,
-  TTL cache, and scoring logic; uses `unittest.mock`, no extra deps
-
-### Changed
-- Version `1.0.0` → `1.1.0`
-- `pytest-mock` added to `[dev]` optional dependencies
-- Evidence support scoring enhanced: checks both title and abstract text
+- GitHub Actions CI, Docker support, real unit test suite (40+ assertions).
 
 ---
 
 ## [1.0.0] — 2025-06-01
 
 ### Added
-- FastAPI REST layer (`helix-api`) on `:8000` with Swagger UI at `/docs`
-- Async TTL cache — synthesis 5 min, trials 3 min, papers 10 min, drugs 1 hr
-- Health check MCP tool + `GET /health` REST endpoint with per-service latency
-- Pydantic v2 domain models across all module boundaries
-- Structured JSON logging to stderr (Datadog/CloudWatch compatible)
-- Exponential backoff retry (3 attempts, 1s → 2s) on all API clients
+- FastAPI REST layer on `:8000`, async TTL cache, health check, Pydantic v2 models,
+  structured JSON logging, exponential backoff retry on all API clients.
 
 ## [0.2.0] — 2025-05-30
-
-### Fixed
-- WAF bypass — `curl_cffi` Chrome TLS impersonation resolves ClinicalTrials.gov 403
+- WAF bypass via `curl_cffi` Chrome TLS impersonation.
 
 ## [0.1.0] — 2025-05-28
-
-### Added
-- Initial production refactor: vector scoring, hard eligibility gate, async clients
+- Initial production refactor: vector scoring, hard eligibility gate, async clients.

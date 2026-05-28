@@ -10,8 +10,8 @@ final_score = 100 * (
 All sub-scores normalized to [0, 1]. Results cached 5 min per
 (condition, age, location, sex).
 
-v1.2.0: synonym expansion applied before any API call; sex param added to
-hard gate; version reads from package metadata.
+v1.3.0: expanded_from populated in ClinicalInsight when abbreviation is resolved.
+v1.2.0: synonym expansion + sex param + _hard_gate sex check.
 v1.1.0: eligibility_fit computes age-window centrality (was hardcoded 1.0).
 """
 import asyncio
@@ -58,9 +58,8 @@ def _hard_gate(trial: dict, age: int, sex: str = None) -> tuple[bool, str]:
         return False, f"age {age} above max {mx}"
     if sex:
         trial_sex = (trial.get("sex") or "ALL").upper()
-        patient_sex = sex.upper()
-        if trial_sex != "ALL" and trial_sex != patient_sex:
-            return False, f"sex mismatch: trial={trial_sex}, patient={patient_sex}"
+        if trial_sex != "ALL" and trial_sex != sex.upper():
+            return False, f"sex mismatch: trial={trial_sex}, patient={sex.upper()}"
     if not trial.get("id"):
         return False, "missing trial ID"
     if not trial.get("title"):
@@ -70,9 +69,8 @@ def _hard_gate(trial: dict, age: int, sex: str = None) -> tuple[bool, str]:
 
 def _eligibility_fit_score(trial: dict, age: int) -> float:
     """
-    Age-window centrality score for the eligibility_fit vector component.
-    Patient at center of window = 1.0; at edge = 0.5; open enrollment = 0.75.
-    Range: [0.5, 1.0]. Never 0 — hard gate already excluded out-of-window patients.
+    Age-window centrality score. Center=1.0, edge=0.5, open enrollment=0.75.
+    Range: [0.5, 1.0]. Hard gate already excluded out-of-window patients.
     """
     mn = trial.get("min_age")
     mx = trial.get("max_age")
@@ -147,15 +145,23 @@ def buildTrialProfile(trial: dict, age: int, condition: str, papers: list, drugs
     ).model_dump()
 
 
-def buildClinicalInsight(profiles: list, condition: str) -> dict:
+def buildClinicalInsight(
+    profiles: list,
+    condition: str,
+    expanded_from: str = None,
+) -> dict:
     if not profiles:
-        return ClinicalInsight(condition=condition or "").model_dump()
+        return ClinicalInsight(
+            condition=condition or "",
+            expanded_from=expanded_from,
+        ).model_dump()
     scores = [p.get("final_score", 0.0) for p in profiles]
     return ClinicalInsight(
         total_trials=len(profiles),
         top_score=round(max(scores), 2),
         average_score=round(sum(scores) / len(scores), 2),
         condition=condition or "",
+        expanded_from=expanded_from,
     ).model_dump()
 
 
@@ -166,8 +172,12 @@ async def synthesizeEvidence(
     sex: str = None,
 ) -> dict:
     """Full cross-database synthesis. Cached 5 min per (condition, age, location, sex)."""
-    condition = expand(condition)  # "T2D" → "Type 2 Diabetes" etc.
-    key = f"synthesis:{condition.lower().strip()}:{age}:{location or ''}:{sex or ''}"
+    # Expand abbreviation and record original for response transparency
+    original = condition.strip()
+    condition = expand(original)
+    expanded_from = original if condition != original else None
+
+    key = f"synthesis:{condition.lower()}:{age}:{location or ''}:{sex or ''}"
     cached = await synthesis_cache.get(key)
     if cached is not None:
         _log.info("cache_hit", extra={"tool": "synthesis", "condition": condition, "age": age})
@@ -204,7 +214,7 @@ async def synthesizeEvidence(
     )
 
     result = SynthesisResult(
-        clinicalInsight=buildClinicalInsight(profiles, condition),
+        clinicalInsight=buildClinicalInsight(profiles, condition, expanded_from),
         trialProfiles=profiles,
         excludedTrials=excluded,
     ).model_dump()
@@ -212,6 +222,7 @@ async def synthesizeEvidence(
     elapsed = round((time.monotonic() - t0) * 1000, 1)
     _log.info("synthesis_done", extra={
         "condition": condition, "age": age, "sex": sex or "any",
+        "expanded_from": expanded_from,
         "scored": len(profiles), "excluded": len(excluded), "ms": elapsed,
     })
 
