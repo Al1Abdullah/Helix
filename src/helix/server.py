@@ -2,6 +2,7 @@ from mcp.server.fastmcp import FastMCP
 from helix.tools.trials import findTrials
 from helix.tools.pubmed import searchPapers
 from helix.tools.fda import lookupDrug
+from helix.tools.eligibility import matchEligibility
 from helix.config import server
 
 mcp = FastMCP(server.name)
@@ -42,12 +43,6 @@ async def lookup_drug(name: str, limit: int = 5) -> list[dict]:
     """
     return await lookupDrug(name, limit)
 
-def run():
-    mcp.run()
-
-if __name__ == "__main__":
-    run()
-
 @mcp.tool()
 async def match_eligibility(condition: str, age: int, location: str = None, limit: int = 10) -> list[dict]:
     """
@@ -59,5 +54,10 @@ async def match_eligibility(condition: str, age: int, location: str = None, limi
         location: Optional location filter
         limit: Number of results, default 10
     """
-    from helix.tools.eligibility import matchEligibility
     return await matchEligibility(condition, age, location, limit)
+
+def run():
+    mcp.run()
+
+if __name__ == "__main__":
+    run()

@@ -1,39 +1,43 @@
-import subprocess
-import json
+import httpx
 from helix.config import pubmed
 
 class PubMedClient:
     def __init__(self):
-        self.userAgent = "Mozilla/5.0"
+        self.headers = {"User-Agent": "Mozilla/5.0"}
 
     def search(self, topic: str, yearFrom: int = None, yearTo: int = None, limit: int = 10) -> list[str]:
-        query = topic.replace(" ", "+")
+        query = topic
         if yearFrom and yearTo:
-            query += f"+AND+{yearFrom}:{yearTo}[pdat]"
+            query += f" AND {yearFrom}:{yearTo}[pdat]"
 
-        url = (
-            f"{pubmed.baseUrl}/esearch.fcgi"
-            f"?db=pubmed&term={query}&retmax={limit}&retmode=json"
-        )
+        params = {
+            "db": "pubmed",
+            "term": query,
+            "retmax": limit,
+            "retmode": "json",
+        }
 
-        result = subprocess.run(
-            ["curl", "-s", "-H", f"User-Agent: {self.userAgent}", url],
-            capture_output=True, text=True,
-        )
-
-        data = json.loads(result.stdout)
-        return data["esearchresult"]["idlist"]
+        with httpx.Client(timeout=30.0) as client:
+            response = client.get(
+                f"{pubmed.baseUrl}/esearch.fcgi",
+                params=params,
+                headers=self.headers,
+            )
+            response.raise_for_status()
+            return response.json()["esearchresult"]["idlist"]
 
     def fetchSummaries(self, ids: list[str]) -> dict:
-        idString = ",".join(ids)
-        url = (
-            f"{pubmed.baseUrl}/esummary.fcgi"
-            f"?db=pubmed&id={idString}&retmode=json"
-        )
+        params = {
+            "db": "pubmed",
+            "id": ",".join(ids),
+            "retmode": "json",
+        }
 
-        result = subprocess.run(
-            ["curl", "-s", "-H", f"User-Agent: {self.userAgent}", url],
-            capture_output=True, text=True,
-        )
-
-        return json.loads(result.stdout)
+        with httpx.Client(timeout=30.0) as client:
+            response = client.get(
+                f"{pubmed.baseUrl}/esummary.fcgi",
+                params=params,
+                headers=self.headers,
+            )
+            response.raise_for_status()
+            return response.json()

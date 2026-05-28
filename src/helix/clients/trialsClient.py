@@ -1,25 +1,27 @@
-import subprocess
-import json
+import httpx
 from helix.config import trials
 
 class TrialsClient:
     def __init__(self):
-        self.userAgent = "Mozilla/5.0"
+        self.headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+        }
 
     async def search(self, condition: str, location: str = None, limit: int = 10) -> dict:
-        url = (
-            f"{trials.baseUrl}/studies"
-            f"?query.cond={condition.replace(' ', '+')}"
-            f"&pageSize={limit}"
-            f"&format=json"
-        )
+        params = {
+            "query.cond": condition,
+            "pageSize": limit,
+            "format": "json",
+        }
         if location:
-            url += f"&query.locn={location.replace(' ', '+')}"
+            params["query.locn"] = location
 
-        result = subprocess.run(
-            ["curl", "-s", "-H", f"User-Agent: {self.userAgent}", url],
-            capture_output=True,
-            text=True,
-        )
-
-        return json.loads(result.stdout)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{trials.baseUrl}/studies",
+                params=params,
+                headers=self.headers,
+            )
+            response.raise_for_status()
+            return response.json()
