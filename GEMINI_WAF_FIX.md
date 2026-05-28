@@ -1,3 +1,55 @@
+# HELIX — WAF FIX PROMPT (targeted, 2 files only)
+# Run from inside Helix-main/
+
+---
+
+## PROBLEM
+
+`src/helix/clients/trialsClient.py` currently uses `httpx`.
+ClinicalTrials.gov sits behind Cloudflare WAF which inspects TLS fingerprints (JA3/JA4).
+`httpx` has a non-browser TLS fingerprint → 403 Forbidden every request → zero trials returned.
+
+The fix is to replace `httpx` in `trialsClient.py` with `curl_cffi`, which impersonates
+a real Chrome TLS fingerprint and passes WAF inspection.
+
+Only TWO files need to change. Do NOT touch any other file.
+
+---
+
+## FILE 1 — `pyproject.toml`
+
+FIND this exact block:
+
+```toml
+dependencies = [
+    "mcp[cli]>=1.0.0",
+    "httpx>=0.27.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+]
+```
+
+REPLACE it with:
+
+```toml
+dependencies = [
+    "mcp[cli]>=1.0.0",
+    "httpx>=0.27.0",
+    "curl_cffi>=0.7.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+]
+```
+
+(Keep every other line in pyproject.toml exactly as-is.)
+
+---
+
+## FILE 2 — `src/helix/clients/trialsClient.py`
+
+OVERWRITE the entire file with:
+
+```python
 """
 trialsClient.py — ClinicalTrials.gov API v2 client.
 
@@ -91,3 +143,65 @@ class TrialsClient:
                 return data if isinstance(data, dict) else _SAFE_FALLBACK
         except Exception:
             return _SAFE_FALLBACK
+```
+
+---
+
+## EXECUTION STEPS
+
+Run these commands in order from inside `Helix-main/`:
+
+```bash
+# 1. Install the new dependency
+pip install "curl_cffi>=0.7.0"
+
+# 2. Reinstall the package so pyproject.toml changes take effect
+pip install -e .
+
+# 3. Run the full test suite
+python tests/tools/testSynthesis.py
+python tests/tools/testTrials.py
+python tests/tools/testEligibility.py
+python tests/tools/testFda.py
+python tests/tools/testPubmed.py
+```
+
+---
+
+## EXPECTED OUTCOME
+
+- `testTrials.py` now returns real trial IDs (NCT...) instead of zero results
+- `testSynthesis.py` prints a full clinical report with populated `trialProfiles`
+- `testFda.py` and `testPubmed.py` still work (unchanged)
+- `testEligibility.py` now returns matched trials with scores
+
+---
+
+## DO NOT TOUCH
+
+- `src/helix/clients/fdaClient.py` — FDA API does not WAF-block httpx, leave it
+- `src/helix/clients/pubmedClient.py` — PubMed does not WAF-block httpx, leave it
+- Every other file in the repo — already verified clean
+
+---
+
+## VERIFICATION CHECK (run after)
+
+```bash
+python -c "
+from curl_cffi.requests import AsyncSession
+print('curl_cffi installed OK')
+
+import inspect
+import sys
+sys.path.insert(0, 'src')
+from helix.clients.trialsClient import TrialsClient, _USE_CURL
+assert _USE_CURL, 'curl_cffi not detected by trialsClient!'
+tc = TrialsClient()
+assert inspect.iscoroutinefunction(tc.search)
+assert inspect.iscoroutinefunction(tc._get_curl)
+assert inspect.iscoroutinefunction(tc._get_httpx)
+print('trialsClient WAF fix verified')
+"
+```
+
