@@ -11,7 +11,7 @@
 [![REST API](https://img.shields.io/badge/REST_API-:8000-111111?style=flat-square)](#rest-api)
 [![Docker Ready](https://img.shields.io/badge/docker-ready-111111?style=flat-square&logo=docker&logoColor=white)](Dockerfile)
 [![No API Key](https://img.shields.io/badge/no_API_key-required-111111?style=flat-square)](#data-sources)
-[![Version](https://img.shields.io/badge/version-1.1.0-111111?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.4.0-111111?style=flat-square)](CHANGELOG.md)
 
 ```
   Claude · GPT · Gemini · Copilot      curl · Python · any HTTP client
@@ -43,13 +43,14 @@ No credentials. No rate-limit management. No data wrangling. Just answers.
 git clone https://github.com/Al1Abdullah/Helix.git
 cd Helix
 pip install -e .
-python tests/tools/testSynthesis.py
+helix-api
+# → http://localhost:8000/docs
 ```
 
 ### Docker
 
 ```bash
-docker compose up          # REST API on :8000
+docker compose up
 # → http://localhost:8000/docs
 ```
 
@@ -58,25 +59,32 @@ docker compose up          # REST API on :8000
 ## REST API
 
 ```bash
-helix-api          # starts on :8000
-# → http://localhost:8000/docs  (Swagger UI)
+helix-api    # starts on :8000
 ```
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/health` | Ping all 3 APIs, get per-service latency |
-| `POST` | `/synthesize` | Full synthesis with scored, explainable profiles |
-| `POST` | `/eligibility` | Match patient to trials by age + condition |
-| `GET` | `/trials` | Search ClinicalTrials.gov |
-| `GET` | `/papers` | Search PubMed (with full abstracts) |
+| `GET` | `/synonyms` | All 70+ recognized medical abbreviations and their expansions |
+| `GET` | `/score-weights` | Scoring formula, weight vector, and component descriptions |
+| `POST` | `/synthesize` | Full synthesis: scored + ranked trials, excluded trials with reasons |
+| `POST` | `/eligibility` | Match patient profile to trials by condition, age, and sex |
+| `GET` | `/trials` | Search ClinicalTrials.gov (supports `sex` filter) |
+| `GET` | `/papers` | Search PubMed with full abstracts |
 | `GET` | `/drugs` | Search openFDA drug labels |
 | `GET` | `/cache/stats` | Inspect cache state |
 | `DELETE` | `/cache` | Flush all caches |
 
+**Input validation:** `age` is restricted to `[0, 130]`. `condition` must be `1–300` characters. Invalid requests return a 422 with a clear error message.
+
 ```bash
+# Abbreviations are auto-expanded: T2D → Type 2 Diabetes
 curl -X POST http://localhost:8000/synthesize \
   -H "Content-Type: application/json" \
-  -d '{"condition": "Type 2 Diabetes", "age": 45}'
+  -d '{"condition": "T2D", "age": 45, "sex": "MALE"}'
+
+# Sex filter on direct trial search
+curl "http://localhost:8000/trials?condition=NSCLC&sex=FEMALE&limit=5"
 ```
 
 ---
@@ -95,12 +103,14 @@ Add to `claude_desktop_config.json`:
 
 | Tool | Description |
 |------|-------------|
-| `synthesize_evidence` | Full cross-database synthesis with scored, explainable profiles |
-| `find_trials` | Search ClinicalTrials.gov for recruiting trials |
-| `search_papers` | Search PubMed by topic + year range (full abstracts) |
-| `lookup_drug` | FDA drug label lookup |
-| `match_eligibility` | Pre-filter trials by patient age + condition |
-| `health_check` | Live API connectivity + latency report |
+| `synthesize_evidence` | Full cross-database synthesis — scored profiles + excluded trial reasons |
+| `find_trials` | Search ClinicalTrials.gov (supports `sex` filter) |
+| `search_papers` | PubMed search by topic + year range, full abstracts |
+| `lookup_drug` | FDA drug label lookup by brand or generic name |
+| `match_eligibility` | Pre-filter trials by condition, age, and sex |
+| `health_check` | Live API connectivity + per-service latency |
+
+All tools that accept a `condition` support medical abbreviations (`T2D`, `NSCLC`, `COPD`, `afib`, etc.) — they are automatically expanded before any API call.
 
 ---
 
@@ -115,15 +125,11 @@ final_score = 100 × (
 )
 ```
 
-All sub-scores normalized to [0, 1]. Full `score_vector` and `explainability_vector`
-returned with every profile — every score is fully auditable.
+All sub-scores normalized to `[0, 1]`. Every response includes a full `score_vector` and `explainability_vector` — every score is auditable.
 
-### eligibility_fit (v1.1.0)
+A patient at the **center** of a trial's age window scores `1.0` for `eligibility_fit`. At the **edge** they score `0.5`. Open enrollment (no age constraints) scores `0.75`.
 
-A patient at the **center** of a trial's age window scores **1.0**. A patient at the
-**edge** scores **0.5**. Open enrollment (no age constraints) scores **0.75**.
-Trials that passed the hard gate but are less tailored to this specific patient
-age profile are naturally ranked lower.
+Trials that fail hard eligibility checks (age out of range, sex mismatch, missing ID/title) are not silently dropped — they appear in `excludedTrials` with the specific rejection reason.
 
 ---
 
@@ -132,8 +138,10 @@ age profile are naturally ranked lower.
 | Source | Records | Access |
 |--------|---------|--------|
 | [ClinicalTrials.gov](https://clinicaltrials.gov/api/v2) | 400,000+ trials | Free, no key |
-| [PubMed / NCBI](https://www.ncbi.nlm.nih.gov/home/develop/api/) | 35M+ papers | Free, no key |
+| [PubMed / NCBI](https://www.ncbi.nlm.nih.gov/home/develop/api/) | 35M+ papers | Free, optional key |
 | [openFDA](https://open.fda.gov/apis/) | Drug labels | Free, no key |
+
+A free PubMed API key raises the rate limit from 3 to 10 requests/second. See `.env.example`.
 
 ---
 
@@ -144,24 +152,26 @@ src/helix/
 ├── api.py              FastAPI REST server
 ├── server.py           MCP server
 ├── models.py           Pydantic v2 domain schemas
-├── cache.py            Async TTL cache
-├── logger.py           Structured JSON logging
+├── cache.py            Async TTL cache (per-tool TTLs)
+├── logger.py           Structured JSON logging → stderr
 ├── config/             Configuration (URLs, weights, TTLs)
 ├── clients/            Raw API clients (retry + WAF bypass)
-│   ├── trialsClient.py     curl_cffi Chrome impersonation
+│   ├── trialsClient.py     curl_cffi Chrome TLS impersonation
 │   ├── pubmedClient.py     httpx + retry + efetch abstracts
-│   └── fdaClient.py        httpx + retry
-├── tools/              Business logic layer (cached)
+│   └── fdaClient.py        httpx + retry + 4xx short-circuit
+├── tools/              Business logic layer (all cached)
 │   ├── synthesis.py        Vector scoring pipeline
-│   ├── eligibility.py      Age-based pre-filter
+│   ├── eligibility.py      Age + sex pre-filter
 │   ├── trials.py / pubmed.py / fda.py / health.py
 └── utils/
-    └── formatter.py        API response normalizer
+    ├── formatter.py        API response normalizer
+    └── synonyms.py         70+ medical abbreviation mappings
 tests/
-├── unit/               Fast unit tests (no network, CI-safe)
-│   ├── test_formatter.py
-│   ├── test_cache.py
-│   └── test_scoring.py
+├── unit/               Fast unit tests (no network, CI-safe) — 79 assertions
+│   ├── test_scoring.py     Scoring functions, hard gate, sex filtering
+│   ├── test_formatter.py   Response shaping, field hygiene
+│   ├── test_synonyms.py    Abbreviation expansion
+│   └── test_cache.py       TTL cache behaviour
 └── tools/              Live smoke tests (require network)
 ```
 
