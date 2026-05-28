@@ -1,1 +1,3 @@
-baseUrl = "https://api.fda.gov/drug"
+from helix.config import fda
+
+baseUrl = fda.base_url

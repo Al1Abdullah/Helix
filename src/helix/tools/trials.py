@@ -1,9 +1,8 @@
 from helix.clients.trialsClient import TrialsClient
 from helix.utils.formatter import Formatter
 
-
-client = TrialsClient()
-formatter = Formatter()
+_client = TrialsClient()
+_formatter = Formatter()
 
 
 async def findTrials(
@@ -11,10 +10,10 @@ async def findTrials(
 ) -> list[dict]:
     """
     Find active clinical trials for a condition.
-    Returns structured trial data any AI model can reason about.
+    Returns a list of canonical Trial dicts (never raises).
     """
     try:
-        raw = await client.search(condition, location, limit)
-        return formatter.shapeTrialResults(raw)
-    except Exception as error:
-        return [{"error": str(error), "condition": condition}]
+        raw = await _client.search(condition, location, limit)
+        return _formatter.shapeTrialResults(raw)
+    except Exception as err:
+        return [{"id": "", "title": f"[search error: {err}]", "status": "", "phase": [], "url": ""}]

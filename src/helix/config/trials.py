@@ -1,1 +1,3 @@
-baseUrl = "https://clinicaltrials.gov/api/v2"
+from helix.config import trials
+
+baseUrl = trials.base_url

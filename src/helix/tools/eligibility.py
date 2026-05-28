@@ -1,56 +1,55 @@
 from helix.clients.trialsClient import TrialsClient
 from helix.utils.formatter import Formatter
 
-client = TrialsClient()
-formatter = Formatter()
+_client = TrialsClient()
+_formatter = Formatter()
 
 
-def parseAge(ageString: str) -> int | None:
-    if not ageString:
-        return None
-    lower = ageString.lower()
-    try:
-        if "month" in lower:
-            return int(lower.split()[0]) // 12
-        return int(lower.split()[0])
-    except (ValueError, IndexError):
-        return None
+def _legacy_score(trial: dict, age: int, condition: str) -> int:
+    """
+    Lightweight pre-filter score (0–100 integer).
+    Used ONLY for initial ranking before the synthesis pipeline runs.
+    The authoritative scoring happens in synthesis.py (vector-based).
+    Returns 0 if the patient is outside the age window (hard rejection).
+    """
+    min_age = trial.get("min_age")  # already int|None from formatter
+    max_age = trial.get("max_age")  # already int|None from formatter
 
-
-def scoreMatch(trial: dict, age: int, condition: str) -> int:
-    minAge = parseAge(trial.get("minimumAge", ""))
-    maxAge = parseAge(trial.get("maximumAge", ""))
-
-    if minAge is not None and age < minAge:
+    if isinstance(min_age, int) and age < min_age:
         return 0
-    if maxAge is not None and age > maxAge:
+    if isinstance(max_age, int) and age > max_age:
         return 0
 
     score = 40
+    cond_words = condition.lower().split()
+    title = (trial.get("title") or "").lower()
+    summary = (trial.get("summary") or "").lower()
 
-    conditionWords = condition.lower().split()
-    title = trial.get("title", "").lower()
-    summary = trial.get("summary", "").lower()
+    score += min(sum(1 for w in cond_words if w in title) * 15, 40)
+    score += min(sum(1 for w in cond_words if w in summary) * 5, 20)
 
-    score += min(sum(1 for w in conditionWords if w in title) * 15, 40)
-    score += min(sum(1 for w in conditionWords if w in summary) * 5, 20)
-
-    phase = trial.get("phase", [])
+    phase = trial.get("phase") or []
     if any(p in ["PHASE3", "PHASE4"] for p in phase):
         score += 10
 
     return min(score, 100)
 
 
-async def matchEligibility(condition: str, age: int, location: str = None, limit: int = 10):
-    raw = await client.search(condition, location, limit * 2)
-    trials = formatter.shapeTrialResults(raw)
+async def matchEligibility(
+    condition: str, age: int, location: str = None, limit: int = 10
+) -> list[dict]:
+    """
+    Fetch trials and return those passing basic age eligibility,
+    ordered by lightweight pre-filter score descending.
+    """
+    raw = await _client.search(condition, location, limit * 2)
+    trials = _formatter.shapeTrialResults(raw)
 
     scored = []
     for t in trials:
-        s = scoreMatch(t, age, condition)
+        s = _legacy_score(t, age, condition)
         if s > 0:
-            scored.append({**t, "matchScore": s})
+            scored.append({**t, "match_score_legacy": s})
 
-    scored.sort(key=lambda x: x["matchScore"], reverse=True)
+    scored.sort(key=lambda x: x.get("match_score_legacy", 0), reverse=True)
     return scored[:limit]
