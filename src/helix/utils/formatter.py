@@ -48,3 +48,20 @@ class Formatter:
             })
 
         return results
+
+    def shapeDrugResults(self, rawResponse: dict) -> list[dict]:
+        results = rawResponse.get("results", [])
+        shaped = []
+
+        for drug in results:
+            openfda = drug.get("openfda", {})
+            shaped.append({
+                "brandName": openfda.get("brand_name", [""])[0] if openfda.get("brand_name") else "",
+                "genericName": openfda.get("generic_name", [""])[0] if openfda.get("generic_name") else "",
+                "manufacturer": openfda.get("manufacturer_name", [""])[0] if openfda.get("manufacturer_name") else "",
+                "route": openfda.get("route", []),
+                "indications": drug.get("indications_and_usage", [""])[0][:300] if drug.get("indications_and_usage") else "",
+                "warnings": drug.get("warnings", [""])[0][:300] if drug.get("warnings") else "",
+            })
+
+        return shaped
