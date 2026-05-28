@@ -1,6 +1,6 @@
 <div align="center">
 
-# ⚕️ Helix
+# Helix
 
 ### Clinical evidence synthesis engine — free, no API key, production-grade.
 
@@ -20,9 +20,9 @@
 
 | | |
 |:---:|:---:|
-| 🏥 **400,000+ Clinical Trials** | 📄 **35M+ PubMed Papers** |
+|  **400,000+ Clinical Trials** |  **35M+ PubMed Papers** |
 | ClinicalTrials.gov live data | Full abstracts via efetch |
-| 💊 **FDA Drug Labels** | ⚡ **< 4 Second Response** |
+|  **FDA Drug Labels** |  **< 4 Second Response** |
 | openFDA drug information | All 3 databases in parallel |
 
 </div>
@@ -31,15 +31,15 @@
 
 ## What makes it different
 
-✅ **Abbreviation expansion** — type `T2D`, get `Type 2 Diabetes`. 70+ medical abbreviations recognized automatically before any API call.
+ **Abbreviation expansion** — type `T2D`, get `Type 2 Diabetes`. 70+ medical abbreviations recognized automatically before any API call.
 
-✅ **Explainable scoring** — every trial gets a score vector: condition match, age-window centrality, evidence support, trial phase maturity. You know exactly why trial #1 ranked above trial #2.
+ **Explainable scoring** — every trial gets a score vector: condition match, age-window centrality, evidence support, trial phase maturity. You know exactly why trial #1 ranked above trial #2.
 
-✅ **Transparent exclusions** — trials that don't qualify don't silently disappear. They appear in `excludedTrials` with the exact rejection reason (`age 72 above max 65`, `sex mismatch: trial=MALE, patient=FEMALE`).
+ **Transparent exclusions** — trials that don't qualify don't silently disappear. They appear in `excludedTrials` with the exact rejection reason (`age 72 above max 65`, `sex mismatch: trial=MALE, patient=FEMALE`).
 
-✅ **Dual interface** — REST API for any language, MCP server for AI models (Claude Desktop, Copilot, Cursor).
+ **Dual interface** — REST API for any language, MCP server for AI models (Claude Desktop, Copilot, Cursor).
 
-✅ **Zero credentials** — no API keys, no sign-ups, no rate-limit management. Just run it.
+ **Zero credentials** — no API keys, no sign-ups, no rate-limit management. Just run it.
 
 ---
 
