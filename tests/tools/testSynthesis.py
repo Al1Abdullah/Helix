@@ -7,14 +7,15 @@ async def main():
     print("\nCLINICAL INSIGHT")
     print(result["clinicalInsight"])
 
-    print("\nTRIAL PROFILES\n")
+    print("\nTRIAL PROFILES")
 
     for t in result["trialProfiles"]:
-        print("---")
-        print("Score:", t["eligibilityScore"])
-        print("Why matched:", " | ".join(
-            f"{k}:{v}" for k, v in t["drivers"].items()
-        ))
+        print("\n---")
+        print("Score:", t["score"])
         print("Risk Flags:", t["riskFlags"])
+        print("Drivers:")
+        for k, v in t["drivers"].items():
+            print(f"  - {k}: {v}")
+        print("Signals:", t["signals"])
 
 asyncio.run(main())

@@ -2,125 +2,93 @@ import asyncio
 from helix.tools.eligibility import matchEligibility
 from helix.tools.pubmed import searchPapers
 from helix.clients.fdaClient import FdaClient
+from helix.config.weights import WEIGHTS
 
 fdaClient = FdaClient()
 
-def clamp(x, lo=0.0, hi=1.0):
-    return max(lo, min(hi, x))
 
-def safe_int(x):
-    if x is None:
-        return None
-    if isinstance(x, int):
-        return x
-    if isinstance(x, str):
-        digits = "".join(ch for ch in x if ch.isdigit())
-        return int(digits) if digits else None
-    return None
+def _phase_score(phase):
+    phase = phase if isinstance(phase, list) else []
+    if any(p in ["PHASE3", "PHASE4"] for p in phase):
+        return 1.0
+    if any(p in ["PHASE2"] for p in phase):
+        return 0.6
+    if any(p in ["PHASE1"] for p in phase):
+        return 0.3
+    return 0.5
 
-def normalize_phase(phase):
-    if isinstance(phase, str):
-        return [phase]
-    if isinstance(phase, list):
-        return phase
-    return []
 
-def compute_drivers(trial, age, condition, papers):
-    title = (trial.get("title") or "").lower()
-    summary = (trial.get("summary") or "").lower()
+def _normalize(x, max_val):
+    if max_val == 0:
+        return 0.0
+    return min(x / max_val, 1.0)
 
-    condition_tokens = set(condition.lower().split())
-    title_tokens = set(title.split())
 
-    condition_overlap = len(condition_tokens & title_tokens)
-    condition_match = clamp(condition_overlap / max(1, len(condition_tokens)))
+def buildTrialProfile(trial: dict, age: int, condition: str, papers: list, drugs: list):
 
-    min_age = safe_int(trial.get("minimumAge"))
-    max_age = safe_int(trial.get("maximumAge"))
+    score_raw = trial.get("matchScore", 0)
 
-    eligibility_fit = 1.0
-    if min_age is not None and age < min_age:
-        eligibility_fit = 0.0
-    if max_age is not None and age > max_age:
-        eligibility_fit = 0.0
+    min_age = trial.get("minimumAge")
+    max_age = trial.get("maximumAge")
+
+    eligible = True
+    if isinstance(min_age, int) and age < min_age:
+        eligible = False
+    if isinstance(max_age, int) and age > max_age:
+        eligible = False
+
+    title = trial.get("title", "")
+    text = (title + " " + trial.get("summary", "")).lower()
+
+    cond_tokens = set(condition.lower().split())
+    title_tokens = set(title.lower().split())
+
+    condition_overlap = len(cond_tokens & title_tokens)
+    condition_match = _normalize(condition_overlap, max(len(cond_tokens), 1))
 
     evidence_hits = 0
     for p in papers:
-        ptokens = set((p.get("title") or "").lower().split())
-        if len(ptokens & condition_tokens) > 0:
+        pt = set(p.get("title", "").lower().split())
+        if len(pt & cond_tokens) > 0:
             evidence_hits += 1
 
-    evidence_support = clamp(evidence_hits / max(1, len(papers)))
+    evidence_support = _normalize(evidence_hits, max(len(papers), 1))
 
-    phase = normalize_phase(trial.get("phase"))
-    if any(p in ["PHASE3", "PHASE4"] for p in phase):
-        trial_phase_maturity = 1.0
-    elif "PHASE2" in phase:
-        trial_phase_maturity = 0.6
-    elif "PHASE1" in phase:
-        trial_phase_maturity = 0.2
-    else:
-        trial_phase_maturity = 0.5
+    eligibility_fit = 1.0 if eligible else 0.0
+    phase_maturity = _phase_score(trial.get("phase", []))
 
-    return {
-        "condition_match": round(condition_match, 3),
-        "eligibility_fit": eligibility_fit,
-        "evidence_support": round(evidence_support, 3),
-        "trial_phase_maturity": trial_phase_maturity,
-        "condition_overlap_raw": condition_overlap,
-        "evidence_hits_raw": evidence_hits,
-    }
+    # WEIGHTED SCORE (real pipeline)
+    score = (
+        WEIGHTS["condition_match"] * condition_match +
+        WEIGHTS["eligibility_fit"] * eligibility_fit +
+        WEIGHTS["evidence_support"] * evidence_support +
+        WEIGHTS["trial_phase_maturity"] * phase_maturity
+    ) * 100
 
-def compute_score(drivers):
-    return round(
-        100 * (
-            0.35 * drivers["condition_match"] +
-            0.30 * drivers["eligibility_fit"] +
-            0.20 * drivers["evidence_support"] +
-            0.15 * drivers["trial_phase_maturity"]
-        ),
-        2
-    )
-
-def compute_risk_flags(drivers):
-    flags = []
-
-    if drivers["eligibility_fit"] == 0.0:
-        flags.append("INELIGIBLE_AGE")
-
-    if drivers["condition_match"] < 0.3:
-        flags.append("LOW_CONDITION_MATCH")
-
-    if drivers["trial_phase_maturity"] <= 0.2:
-        flags.append("EARLY_STAGE_TRIAL")
-
-    if drivers["evidence_support"] < 0.2:
-        flags.append("WEAK_EVIDENCE_SUPPORT")
-
-    return flags
-
-def buildTrialProfile(trial, age, condition, papers, drugs):
-    drivers = compute_drivers(trial, age, condition, papers)
-    score = compute_score(drivers)
-    risk_flags = compute_risk_flags(drivers)
-    phase = normalize_phase(trial.get("phase"))
+    risk_flags = []
+    if not eligible:
+        risk_flags.append("INELIGIBLE_AGE")
+    if condition_match < 0.2:
+        risk_flags.append("LOW_CONDITION_MATCH")
+    if phase_maturity <= 0.3:
+        risk_flags.append("EARLY_STAGE_TRIAL")
 
     return {
         "id": trial.get("id"),
-        "title": trial.get("title"),
-        "eligibilityScore": score,
-        "drivers": drivers,
-        "riskFlags": risk_flags,
-        "signals": {
-            "condition_overlap_raw": drivers["condition_overlap_raw"],
-            "evidence_hits_raw": drivers["evidence_hits_raw"],
+        "score": round(score, 2),
+        "drivers": {
+            "condition_match": round(condition_match, 3),
+            "eligibility_fit": eligibility_fit,
+            "evidence_support": round(evidence_support, 3),
+            "trial_phase_maturity": round(phase_maturity, 3),
         },
-        "standardOfCareAlignment": (
-            "late-stage"
-            if any(p in ["PHASE3", "PHASE4"] for p in phase)
-            else "early/experimental"
-        )
+        "signals": {
+            "condition_overlap_raw": condition_overlap,
+            "evidence_hits_raw": evidence_hits,
+        },
+        "riskFlags": risk_flags
     }
+
 
 def buildClinicalInsight(profiles, condition):
     if not profiles:
@@ -131,8 +99,7 @@ def buildClinicalInsight(profiles, condition):
             "condition": condition
         }
 
-    scores = [p["eligibilityScore"] for p in profiles]
-
+    scores = [p["score"] for p in profiles]
     return {
         "total_trials": len(profiles),
         "top_score": max(scores),
@@ -140,13 +107,15 @@ def buildClinicalInsight(profiles, condition):
         "condition": condition
     }
 
+
 async def synthesizeEvidence(condition: str, age: int, location: str = None) -> dict:
+
     trials, papers = await asyncio.gather(
         matchEligibility(condition, age, location, limit=8),
         searchPapers(condition, limit=5),
     )
 
-    drugs_raw = fdaClient.search(condition, limit=3)
+    drugs_raw = fdaClient.searchByIndication(condition, limit=3)
     drugs = drugs_raw.get("results", []) if isinstance(drugs_raw, dict) else []
 
     profiles = [
