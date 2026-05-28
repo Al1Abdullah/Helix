@@ -22,12 +22,20 @@ class FdaConfig:
     default_limit: int = 10
 
 
+class CacheConfig:
+    synthesis_ttl: int = 300   # 5 min
+    trials_ttl: int = 180      # 3 min
+    papers_ttl: int = 600      # 10 min
+    drugs_ttl: int = 3600      # 1 hr
+
+
 class ServerConfig:
     name: str = "Helix"
-    version: str = "0.1.0"
+    version: str = "1.0.0"
 
 
 trials = TrialsConfig()
 pubmed = PubMedConfig()
 fda = FdaConfig()
+cache = CacheConfig()
 server = ServerConfig()

@@ -1,71 +1,61 @@
+"""NCBI PubMed E-utilities client — retry with exponential backoff."""
+import asyncio
 import httpx
 from helix.config import pubmed as pubmed_config
+from helix.logger import get_logger
+
+_log = get_logger(__name__)
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json",
+}
 
 
 class PubMedClient:
     def __init__(self):
-        self._base_url = pubmed_config.base_url
-        self._headers = {"User-Agent": "Helix/1.0 (clinical trial research tool)"}
+        self._base = pubmed_config.base_url
 
-    async def search(
-        self,
-        topic: str,
-        year_from: int = None,
-        year_to: int = None,
-        limit: int = 10,
-    ) -> list[str]:
-        """Search PubMed and return a list of article IDs."""
-        query = topic
-        if year_from and year_to:
-            query += f" AND {year_from}:{year_to}[pdat]"
-        elif year_from:
-            query += f" AND {year_from}:3000[pdat]"
-
-        params = {
-            "db": "pubmed",
-            "term": query,
-            "retmax": limit,
-            "retmode": "json",
-            "email": pubmed_config.email,
-        }
+    def _params(self) -> dict:
+        p = {"email": pubmed_config.email}
         if pubmed_config.api_key:
-            params["api_key"] = pubmed_config.api_key
+            p["api_key"] = pubmed_config.api_key
+        return p
 
-        try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                response = await client.get(
-                    f"{self._base_url}/esearch.fcgi",
-                    params=params,
-                    headers=self._headers,
-                )
-                response.raise_for_status()
-                data = response.json()
-                return data.get("esearchresult", {}).get("idlist", [])
-        except Exception:
-            return []
+    async def search(self, topic: str, year_from: int = None, year_to: int = None, limit: int = 10) -> list[str]:
+        q = topic
+        if year_from and year_to:
+            q += f" AND {year_from}:{year_to}[pdat]"
+        elif year_from:
+            q += f" AND {year_from}:3000[pdat]"
+        params = {**self._params(), "db": "pubmed", "term": q, "retmax": limit, "retmode": "json"}
+        last = None
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=20.0) as c:
+                    r = await c.get(f"{self._base}/esearch.fcgi", params=params, headers=_HEADERS)
+                    r.raise_for_status()
+                    return r.json().get("esearchresult", {}).get("idlist", [])
+            except Exception as e:
+                last = e
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+        _log.warning("pubmed_search_exhausted", extra={"topic": topic, "error": str(last)})
+        return []
 
     async def fetchSummaries(self, ids: list[str]) -> dict:
-        """Fetch metadata summaries for a list of PubMed IDs."""
         if not ids:
             return {}
-
-        params = {
-            "db": "pubmed",
-            "id": ",".join(ids),
-            "retmode": "json",
-            "email": pubmed_config.email,
-        }
-        if pubmed_config.api_key:
-            params["api_key"] = pubmed_config.api_key
-
-        try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                response = await client.get(
-                    f"{self._base_url}/esummary.fcgi",
-                    params=params,
-                    headers=self._headers,
-                )
-                response.raise_for_status()
-                return response.json()
-        except Exception:
-            return {}
+        params = {**self._params(), "db": "pubmed", "id": ",".join(ids), "retmode": "json"}
+        last = None
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=20.0) as c:
+                    r = await c.get(f"{self._base}/esummary.fcgi", params=params, headers=_HEADERS)
+                    r.raise_for_status()
+                    return r.json()
+            except Exception as e:
+                last = e
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+        _log.warning("pubmed_fetch_exhausted", extra={"ids": len(ids), "error": str(last)})
+        return {}

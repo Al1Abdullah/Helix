@@ -1,39 +1,37 @@
 <div align="center">
 
-<br>
-
 # Helix
 
-**MCP server connecting any AI model to the world's largest free healthcare databases.**
-
-<br>
+**Clinical evidence synthesis engine — free, no API key, production-grade.**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-111111?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111111?style=flat-square)](LICENSE)
 [![MCP Compatible](https://img.shields.io/badge/MCP-compatible-111111?style=flat-square)](https://modelcontextprotocol.io)
+[![REST API](https://img.shields.io/badge/REST_API-:8000-111111?style=flat-square)](#rest-api)
 [![No API Key](https://img.shields.io/badge/no_API_key-required-111111?style=flat-square)](#data-sources)
-
-<br>
+[![Version](https://img.shields.io/badge/version-1.0.0-111111?style=flat-square)](CHANGELOG.md)
 
 ```
- Claude · GPT · Gemini · Copilot · any MCP client
-                      │
-               ┌──────┴──────┐
-               │    Helix    │
-               └──────┬──────┘
-         ┌────────────┼────────────┐
-         ▼            ▼            ▼
-  ClinicalTrials    PubMed      openFDA
-   400k+ trials   35M papers   Drug labels
+  Claude · GPT · Gemini · Copilot      curl · Python · any HTTP client
+              │                                      │
+    ┌─────────┴──────────────────────────────────────┴─────────┐
+    │                        Helix                              │
+    │           MCP Server (stdio)  ·  REST API (:8000)        │
+    │  Vector scoring · TTL cache · Retry · JSON logs          │
+    └───────────────────────┬───────────────────────────────────┘
+              ┌─────────────┼─────────────┐
+              ▼             ▼             ▼
+      ClinicalTrials      PubMed       openFDA
+       400k+ trials      35M papers   Drug labels
 ```
-
-<br>
 
 </div>
 
 ---
 
-Helix is a [Model Context Protocol](https://modelcontextprotocol.io) server. Install it once and every MCP-compatible AI model gains structured, queryable access to three of the largest public healthcare databases on earth — without managing credentials, rate limits, or data wrangling.
+Helix is a clinical evidence synthesis engine built on the [Model Context Protocol](https://modelcontextprotocol.io). Give any AI model structured access to the three largest free public health databases — or call it as a REST API from any language.
+
+No credentials. No rate-limit management. No data wrangling. Just answers.
 
 ---
 
@@ -43,164 +41,111 @@ Helix is a [Model Context Protocol](https://modelcontextprotocol.io) server. Ins
 git clone https://github.com/Al1Abdullah/Helix.git
 cd Helix
 pip install -e .
+python tests/tools/testSynthesis.py
 ```
 
-**Claude Desktop** — add to `claude_desktop_config.json` and restart:
+---
+
+## REST API
+
+```bash
+helix-api          # starts on :8000
+# → http://localhost:8000/docs  (Swagger UI)
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Ping all 3 APIs, get per-service latency |
+| `POST` | `/synthesize` | Full synthesis with scored, explainable profiles |
+| `POST` | `/eligibility` | Match patient to trials by age + condition |
+| `GET` | `/trials` | Search ClinicalTrials.gov |
+| `GET` | `/papers` | Search PubMed |
+| `GET` | `/drugs` | Search openFDA drug labels |
+| `GET` | `/cache/stats` | Inspect cache state |
+| `DELETE` | `/cache` | Flush all caches |
+
+```bash
+curl -X POST http://localhost:8000/synthesize \
+  -H "Content-Type: application/json" \
+  -d '{"condition": "Type 2 Diabetes", "age": 45}'
+```
+
+---
+
+## MCP Integration
+
+Add to `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
-    "helix": {
-      "command": "helix"
-    }
+    "helix": { "command": "helix" }
   }
 }
 ```
 
-**Any MCP client** — Helix runs over stdio, compatible with any client that implements the MCP spec:
+### MCP Tools
 
-```bash
-helix
-```
-
----
-
-## Tools
-
-| Tool | Database | What it does |
-|---|---|---|
-| `find_trials` | ClinicalTrials.gov | Find recruiting trials by condition and location |
-| `search_papers` | PubMed | Search peer-reviewed research with optional year range |
-| `lookup_drug` | openFDA | Get drug approvals, indications, warnings, manufacturer |
-| `match_eligibility` | ClinicalTrials.gov | Score and rank trials against a patient profile |
+| Tool | Description |
+|------|-------------|
+| `synthesize_evidence` | Full cross-database synthesis with scored, explainable profiles |
+| `find_trials` | Search ClinicalTrials.gov for recruiting trials |
+| `search_papers` | Search PubMed by topic + year range |
+| `lookup_drug` | FDA drug label lookup |
+| `match_eligibility` | Pre-filter trials by patient age + condition |
+| `health_check` | Live API connectivity + latency report |
 
 ---
 
-## Example Queries
-
-Once connected, prompt your AI model naturally:
+## Scoring Model
 
 ```
-Find recruiting clinical trials for Type 2 Diabetes in London
-```
-```
-Search Alzheimer's disease research published after 2023
-```
-```
-What does the FDA say about metformin?
-```
-```
-Match a 45-year-old patient with Type 2 Diabetes to eligible trials
+final_score = 100 × (
+    0.35 × condition_match       +
+    0.30 × eligibility_fit       +
+    0.20 × evidence_support      +
+    0.15 × trial_phase_maturity
+)
 ```
 
----
-
-## Output Format
-
-Each tool returns clean, structured objects ready for any model to reason about.
-
-**`find_trials` — one result:**
-
-```json
-{
-  "id": "NCT04800835",
-  "title": "Semaglutide vs Placebo in Patients With Type 2 Diabetes and CKD",
-  "status": "RECRUITING",
-  "phase": ["PHASE3"],
-  "minimumAge": "18 Years",
-  "maximumAge": "75 Years",
-  "contactName": "Study Coordinator",
-  "contactEmail": "trials@site.org",
-  "url": "https://clinicaltrials.gov/study/NCT04800835"
-}
-```
-
-**`match_eligibility` — one result:**
-
-```json
-{
-  "id": "NCT04800835",
-  "title": "Semaglutide vs Placebo in Patients With Type 2 Diabetes and CKD",
-  "matchScore": 85,
-  "minimumAge": "18 Years",
-  "maximumAge": "75 Years",
-  "url": "https://clinicaltrials.gov/study/NCT04800835"
-}
-```
-
----
-
-## Reference
-
-### `find_trials`
-
-| Parameter | Type | Default | Notes |
-|---|---|---|---|
-| `condition` | `string` | — | Required. Medical condition to search |
-| `location` | `string` | `null` | City or country filter |
-| `limit` | `int` | `10` | Max 50 |
-
-### `search_papers`
-
-| Parameter | Type | Default | Notes |
-|---|---|---|---|
-| `topic` | `string` | — | Required. Research topic |
-| `yearFrom` | `int` | `null` | Start year filter |
-| `yearTo` | `int` | `null` | End year filter |
-| `limit` | `int` | `10` | Max 50 |
-
-### `lookup_drug`
-
-| Parameter | Type | Default | Notes |
-|---|---|---|---|
-| `name` | `string` | — | Required. Brand or generic drug name |
-| `limit` | `int` | `5` | Max 50 |
-
-### `match_eligibility`
-
-| Parameter | Type | Default | Notes |
-|---|---|---|---|
-| `condition` | `string` | — | Required. Medical condition |
-| `age` | `int` | — | Required. Patient age in years |
-| `location` | `string` | `null` | City or country filter |
-| `limit` | `int` | `10` | Max 50 |
+All sub-scores normalized to [0, 1]. Full `score_vector` and `explainability_vector` returned with every profile — every score is auditable.
 
 ---
 
 ## Data Sources
 
-All sources are free, public, and require no authentication.
-
-| Source | Scale | Maintained by |
-|---|---|---|
-| [ClinicalTrials.gov](https://clinicaltrials.gov) | 400,000+ trials | US National Library of Medicine |
-| [PubMed](https://pubmed.ncbi.nlm.nih.gov) | 35M+ papers | National Center for Biotechnology Information |
-| [openFDA](https://open.fda.gov) | Full drug label database | US Food and Drug Administration |
+| Source | Records | Access |
+|--------|---------|--------|
+| [ClinicalTrials.gov](https://clinicaltrials.gov/api/v2) | 400,000+ trials | Free, no key |
+| [PubMed / NCBI](https://www.ncbi.nlm.nih.gov/home/develop/api/) | 35M+ papers | Free, no key |
+| [openFDA](https://open.fda.gov/apis/) | Drug labels | Free, no key |
 
 ---
 
-## Project Structure
+## Architecture
 
 ```
 src/helix/
-├── server.py            MCP server entry point, tool registration
-├── config.py            All configuration, one place
-├── tools/
-│   ├── trials.py        find_trials
-│   ├── pubmed.py        search_papers
-│   ├── fda.py           lookup_drug
-│   └── eligibility.py   match_eligibility
-├── clients/
-│   ├── trialsClient.py  ClinicalTrials.gov API v2
-│   ├── pubmedClient.py  NCBI Entrez API
-│   └── fdaClient.py     openFDA label API
+├── api.py              FastAPI REST server
+├── server.py           MCP server
+├── models.py           Pydantic v2 domain schemas
+├── cache.py            Async TTL cache
+├── logger.py           Structured JSON logging
+├── config/             Configuration (URLs, weights, TTLs)
+├── clients/            Raw API clients (retry + WAF bypass)
+│   ├── trialsClient.py     curl_cffi Chrome impersonation
+│   ├── pubmedClient.py     httpx + retry
+│   └── fdaClient.py        httpx + retry
+├── tools/              Business logic layer (cached)
+│   ├── synthesis.py        Vector scoring pipeline
+│   ├── eligibility.py      Age-based pre-filter
+│   ├── trials.py / pubmed.py / fda.py / health.py
 └── utils/
-    ├── formatter.py     Shapes raw API responses into clean objects
-    └── validator.py     Input validation via Pydantic
+    └── formatter.py        API response normalizer
 ```
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT — see [LICENSE](LICENSE).

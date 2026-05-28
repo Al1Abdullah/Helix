@@ -1,52 +1,32 @@
-"""
-trialsClient.py — ClinicalTrials.gov API v2 client.
-
-Uses curl_cffi to impersonate a Chrome TLS fingerprint, bypassing Cloudflare
-WAF which blocks non-browser TLS stacks (httpx, requests, aiohttp all fail with 403).
-Falls back to plain httpx automatically if curl_cffi is not installed.
-"""
-
+"""ClinicalTrials.gov v2 client — curl_cffi Chrome impersonation bypasses WAF 403."""
+import asyncio
 from helix.config import trials as trials_config
+from helix.logger import get_logger
 
-_SAFE_FALLBACK = {"studies": []}
+_log = get_logger(__name__)
+_FALLBACK = {"studies": []}
 
-# --- TLS fingerprint strategy -------------------------------------------------
-# curl_cffi impersonates Chrome's JA3/JA4 TLS fingerprint → passes WAF.
-# httpx fallback is kept so the import never hard-crashes in edge environments.
 try:
-    from curl_cffi.requests import AsyncSession as _CurlSession
+    from curl_cffi.requests import AsyncSession as _Curl
     _USE_CURL = True
 except ImportError:
     _USE_CURL = False
-    import httpx
 
-
-_BROWSER_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "en-US,en;q=0.9",
     "Accept-Encoding": "gzip, deflate, br",
     "Connection": "keep-alive",
     "Cache-Control": "no-cache",
-    "Pragma": "no-cache",
 }
 
 
 class TrialsClient:
     def __init__(self):
-        self._base_url = trials_config.base_url
+        self._base = trials_config.base_url
 
-    async def search(
-        self, condition: str, location: str = None, limit: int = 10
-    ) -> dict:
-        """
-        Search ClinicalTrials.gov for recruiting trials matching a condition.
-        Returns safe fallback {"studies": []} on any error.
-        """
+    async def search(self, condition: str, location: str = None, limit: int = 10) -> dict:
         params = {
             "query.cond": condition,
             "filter.overallStatus": "RECRUITING,NOT_YET_RECRUITING",
@@ -55,39 +35,26 @@ class TrialsClient:
         }
         if location:
             params["query.locn"] = location
-
-        url = f"{self._base_url}/studies"
-
-        if _USE_CURL:
-            return await self._get_curl(url, params)
-        return await self._get_httpx(url, params)
-
-    async def _get_curl(self, url: str, params: dict) -> dict:
-        """Fetch using curl_cffi Chrome impersonation (bypasses WAF)."""
-        try:
-            async with _CurlSession(impersonate="chrome120") as session:
-                response = await session.get(
-                    url,
-                    params=params,
-                    headers=_BROWSER_HEADERS,
-                    timeout=20,
-                )
-                response.raise_for_status()
-                data = response.json()
-                return data if isinstance(data, dict) else _SAFE_FALLBACK
-        except Exception:
-            return _SAFE_FALLBACK
-
-    async def _get_httpx(self, url: str, params: dict) -> dict:
-        """Fallback fetch using httpx (may 403 on WAF-protected endpoints)."""
-        try:
-            import httpx
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                response = await client.get(
-                    url, params=params, headers=_BROWSER_HEADERS
-                )
-                response.raise_for_status()
-                data = response.json()
-                return data if isinstance(data, dict) else _SAFE_FALLBACK
-        except Exception:
-            return _SAFE_FALLBACK
+        url = f"{self._base}/studies"
+        last = None
+        for attempt in range(3):
+            try:
+                if _USE_CURL:
+                    async with _Curl(impersonate="chrome120") as s:
+                        r = await s.get(url, params=params, headers=_HEADERS, timeout=20)
+                        r.raise_for_status()
+                        d = r.json()
+                        return d if isinstance(d, dict) else _FALLBACK
+                else:
+                    import httpx
+                    async with httpx.AsyncClient(timeout=20.0) as c:
+                        r = await c.get(url, params=params, headers=_HEADERS)
+                        r.raise_for_status()
+                        d = r.json()
+                        return d if isinstance(d, dict) else _FALLBACK
+            except Exception as e:
+                last = e
+            if attempt < 2:
+                await asyncio.sleep(2 ** attempt)
+        _log.warning("trials_exhausted", extra={"condition": condition, "error": str(last)})
+        return _FALLBACK
