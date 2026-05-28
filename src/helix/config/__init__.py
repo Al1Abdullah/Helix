@@ -3,6 +3,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+try:
+    from importlib.metadata import version as _pkg_version
+    _VERSION = _pkg_version("helix")
+except Exception:
+    _VERSION = "1.2.0"
+
 
 class TrialsConfig:
     base_url: str = "https://clinicaltrials.gov/api/v2"
@@ -31,7 +37,7 @@ class CacheConfig:
 
 class ServerConfig:
     name: str = "Helix"
-    version: str = "1.0.0"
+    version: str = _VERSION
 
 
 trials = TrialsConfig()

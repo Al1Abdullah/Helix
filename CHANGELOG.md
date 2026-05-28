@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.2.0] — 2026-05-28
+
+### Fixed
+- **`ServerConfig.version` hardcoded to `"1.0.0"`** — Now reads dynamically from
+  package metadata via `importlib.metadata`. `/health`, `/docs`, and all API
+  responses now report the correct version automatically on every release.
+
+### Added
+- **Condition synonym expansion** (`src/helix/utils/synonyms.py`) — 65+ medical
+  abbreviation and alias mappings applied before any external API call. Queries for
+  "T2D", "NSCLC", "COPD", "afib", "RA", "HCV" etc. are transparently expanded to
+  their canonical full names. Zero new dependencies — pure stdlib dict lookup.
+- **Sex eligibility parameter** — `synthesizeEvidence` and `matchEligibility` now
+  accept an optional `sex` argument (`"MALE"` or `"FEMALE"`). Trials with a sex
+  constraint that doesn't match the patient are excluded by the hard gate and
+  reported in `excludedTrials` with reason `sex mismatch`. REST endpoints
+  `/synthesize` and `/eligibility` accept `sex` in the request body.
+- **`GET /score-weights`** — Returns the scoring weight vector, the formula, and
+  plain-English descriptions of every component. Lets API consumers explain trial
+  rankings without reading source code.
+- **Unit tests for synonym expansion** (`tests/unit/test_synonyms.py`) — 10 pure-
+  Python assertions covering uppercase, lowercase, mixed-case, whitespace stripping,
+  and passthrough behavior.
+
+---
+
 ## [1.1.0] — 2025-06-02
 
 ### Fixed

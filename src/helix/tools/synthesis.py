@@ -7,14 +7,16 @@ final_score = 100 * (
     0.20 * evidence_support +
     0.15 * trial_phase_maturity
 )
-All sub-scores normalized to [0, 1]. Results cached 5 min.
+All sub-scores normalized to [0, 1]. Results cached 5 min per
+(condition, age, location, sex).
 
-v1.1.0: eligibility_fit now computes age-window centrality instead of
-always returning 1.0. A patient at the center of the trial's age window
-scores 1.0; a patient at the edge scores 0.5; open enrollment scores 0.75.
+v1.2.0: synonym expansion applied before any API call; sex param added to
+hard gate; version reads from package metadata.
+v1.1.0: eligibility_fit computes age-window centrality (was hardcoded 1.0).
 """
 import asyncio
 import time
+from helix.utils.synonyms import expand
 from helix.tools.eligibility import matchEligibility
 from helix.tools.pubmed import searchPapers
 from helix.clients.fdaClient import FdaClient
@@ -48,12 +50,17 @@ def _norm(value: float, max_val: float) -> float:
     return min(float(value) / float(max_val), 1.0) if max_val > 0 else 0.0
 
 
-def _hard_gate(trial: dict, age: int) -> tuple[bool, str]:
+def _hard_gate(trial: dict, age: int, sex: str = None) -> tuple[bool, str]:
     mn, mx = trial.get("min_age"), trial.get("max_age")
     if isinstance(mn, int) and age < mn:
         return False, f"age {age} below min {mn}"
     if isinstance(mx, int) and age > mx:
         return False, f"age {age} above max {mx}"
+    if sex:
+        trial_sex = (trial.get("sex") or "ALL").upper()
+        patient_sex = sex.upper()
+        if trial_sex != "ALL" and trial_sex != patient_sex:
+            return False, f"sex mismatch: trial={trial_sex}, patient={patient_sex}"
     if not trial.get("id"):
         return False, "missing trial ID"
     if not trial.get("title"):
@@ -63,28 +70,18 @@ def _hard_gate(trial: dict, age: int) -> tuple[bool, str]:
 
 def _eligibility_fit_score(trial: dict, age: int) -> float:
     """
-    Age-window centrality score for the 'eligibility_fit' vector component.
-
-    Intuition: a trial designed for ages 40-50 is more specifically tailored
-    to a 45-year-old patient than a trial designed for ages 18-80.
-    The patient at the center of the window gets 1.0; at the edge gets 0.5.
-    Open enrollment (no age constraints) gets 0.75 — inclusive but not tailored.
-
-    Range: [0.5, 1.0]. Never 0 because the hard gate already excluded
-    out-of-window patients — anything reaching here is eligible.
+    Age-window centrality score for the eligibility_fit vector component.
+    Patient at center of window = 1.0; at edge = 0.5; open enrollment = 0.75.
+    Range: [0.5, 1.0]. Never 0 — hard gate already excluded out-of-window patients.
     """
     mn = trial.get("min_age")
     mx = trial.get("max_age")
-
     if mn is None and mx is None:
-        return 0.75  # open enrollment — inclusive but not patient-specific
-
+        return 0.75
     lo = mn if mn is not None else 0
     hi = mx if mx is not None else 120
     center = (lo + hi) / 2.0
     half_width = max((hi - lo) / 2.0, 1.0)
-
-    # Normalized distance: 0.0 at center, 1.0 at edges
     dist = abs(age - center) / half_width
     return round(max(0.5, 1.0 - dist * 0.5), 4)
 
@@ -95,13 +92,11 @@ def buildTrialProfile(trial: dict, age: int, condition: str, papers: list, drugs
     overlap   = len(cond_tok & title_tok)
     cond_m    = _norm(overlap, max(len(cond_tok), 1))
 
-    # Evidence support: count papers whose title shares tokens with condition
-    # Also checks abstract if populated (v1.1.0 fetches real abstracts)
     ev_hits = 0
     for p in papers:
         if not isinstance(p, dict):
             continue
-        title_match = bool(set((p.get("title") or "").lower().split()) & cond_tok)
+        title_match    = bool(set((p.get("title") or "").lower().split()) & cond_tok)
         abstract_match = bool(set((p.get("abstract") or "").lower().split()) & cond_tok)
         if title_match or abstract_match:
             ev_hits += 1
@@ -109,7 +104,7 @@ def buildTrialProfile(trial: dict, age: int, condition: str, papers: list, drugs
 
     phase   = trial.get("phase") or []
     phase_m = _phase_score(phase)
-    elig_m  = _eligibility_fit_score(trial, age)  # v1.1.0: was hardcoded 1.0
+    elig_m  = _eligibility_fit_score(trial, age)
 
     score = round(100.0 * (
         WEIGHTS["condition_match"]        * cond_m
@@ -126,9 +121,9 @@ def buildTrialProfile(trial: dict, age: int, condition: str, papers: list, drugs
         age_pen = round((age - mx) / max(age, 1), 3)
 
     flags = []
-    if cond_m  < 0.2:  flags.append("LOW_CONDITION_MATCH")
-    if phase_m <= 0.3:  flags.append("EARLY_STAGE_TRIAL")
-    if ev_m    < 0.1:  flags.append("LOW_EVIDENCE_SUPPORT")
+    if cond_m  < 0.2: flags.append("LOW_CONDITION_MATCH")
+    if phase_m <= 0.3: flags.append("EARLY_STAGE_TRIAL")
+    if ev_m    < 0.1: flags.append("LOW_EVIDENCE_SUPPORT")
 
     return TrialProfile(
         id=trial.get("id") or "",
@@ -164,9 +159,15 @@ def buildClinicalInsight(profiles: list, condition: str) -> dict:
     ).model_dump()
 
 
-async def synthesizeEvidence(condition: str, age: int, location: str = None) -> dict:
-    """Full cross-database synthesis. Cached 5 min per (condition, age, location)."""
-    key = f"synthesis:{condition.lower().strip()}:{age}:{location or ''}"
+async def synthesizeEvidence(
+    condition: str,
+    age: int,
+    location: str = None,
+    sex: str = None,
+) -> dict:
+    """Full cross-database synthesis. Cached 5 min per (condition, age, location, sex)."""
+    condition = expand(condition)  # "T2D" → "Type 2 Diabetes" etc.
+    key = f"synthesis:{condition.lower().strip()}:{age}:{location or ''}:{sex or ''}"
     cached = await synthesis_cache.get(key)
     if cached is not None:
         _log.info("cache_hit", extra={"tool": "synthesis", "condition": condition, "age": age})
@@ -174,7 +175,7 @@ async def synthesizeEvidence(condition: str, age: int, location: str = None) -> 
 
     t0 = time.monotonic()
     trials, papers = await asyncio.gather(
-        matchEligibility(condition, age, location, limit=8),
+        matchEligibility(condition, age, location, limit=8, sex=sex),
         searchPapers(condition, limit=5),
     )
 
@@ -186,7 +187,7 @@ async def synthesizeEvidence(condition: str, age: int, location: str = None) -> 
 
     eligible, excluded = [], []
     for t in (trials or []):
-        ok, reason = _hard_gate(t, age)
+        ok, reason = _hard_gate(t, age, sex)
         if ok:
             eligible.append(t)
         else:
@@ -210,7 +211,7 @@ async def synthesizeEvidence(condition: str, age: int, location: str = None) -> 
 
     elapsed = round((time.monotonic() - t0) * 1000, 1)
     _log.info("synthesis_done", extra={
-        "condition": condition, "age": age,
+        "condition": condition, "age": age, "sex": sex or "any",
         "scored": len(profiles), "excluded": len(excluded), "ms": elapsed,
     })
 
