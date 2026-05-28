@@ -4,55 +4,51 @@ from helix.utils.formatter import Formatter
 client = TrialsClient()
 formatter = Formatter()
 
+
+def parseAge(ageString: str) -> int | None:
+    if not ageString:
+        return None
+    lower = ageString.lower()
+    try:
+        if "month" in lower:
+            return int(lower.split()[0]) // 12
+        return int(lower.split()[0])
+    except (ValueError, IndexError):
+        return None
+
+
 def scoreMatch(trial: dict, age: int, condition: str) -> int:
-    """
-    Scores how well a trial matches a patient profile.
-    Returns 0-100. Higher is better fit.
-    """
-    score = 50
+    minAge = parseAge(trial.get("minimumAge", ""))
+    maxAge = parseAge(trial.get("maximumAge", ""))
 
-    minAge = trial.get("minimumAge", "")
-    maxAge = trial.get("maximumAge", "")
+    if minAge is not None and age < minAge:
+        return 0
+    if maxAge is not None and age > maxAge:
+        return 0
 
-    if minAge:
-        try:
-            minYears = int(minAge.replace(" Years", "").replace(" Year", "").strip())
-            if age < minYears:
-                return 0
-            score += 20
-        except ValueError:
-            pass
+    score = 40
 
-    if maxAge:
-        try:
-            maxYears = int(maxAge.replace(" Years", "").replace(" Year", "").strip())
-            if age > maxYears:
-                return 0
-            score += 20
-        except ValueError:
-            pass
-
-    conditionLower = condition.lower()
+    conditionWords = condition.lower().split()
     titleLower = trial.get("title", "").lower()
     summaryLower = trial.get("summary", "").lower()
 
-    if conditionLower in titleLower:
-        score += 20
-    elif any(word in titleLower for word in conditionLower.split()):
-        score += 10
+    titleMatches = sum(1 for word in conditionWords if word in titleLower)
+    summaryMatches = sum(1 for word in conditionWords if word in summaryLower)
 
-    if conditionLower in summaryLower:
-        score += 10
+    score += min(titleMatches * 15, 40)
+    score += min(summaryMatches * 5, 20)
 
     return min(score, 100)
 
 
-async def matchEligibility(condition: str, age: int, location: str = None, limit: int = 10) -> list[dict]:
-    """
-    Match a patient profile against clinical trials and rank by eligibility fit.
-    Returns trials sorted by match score, highest first.
-    """
-    raw = await client.search(condition, location, limit * 2)
+async def matchEligibility(
+    condition: str, age: int, location: str = None, limit: int = 10
+) -> list[dict]:
+    try:
+        raw = await client.search(condition, location, limit * 2)
+    except Exception:
+        return []
+
     trials = formatter.shapeTrialResults(raw)
 
     scored = []

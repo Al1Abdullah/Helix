@@ -20,12 +20,6 @@ Connect Claude, GPT, Gemini, or any MCP-compatible model to ClinicalTrials.gov, 
 ## Installation
 
 ```bash
-pip install helix-mcp
-```
-
-Or clone and install locally:
-
-```bash
 git clone https://github.com/Al1Abdullah/Helix.git
 cd Helix
 pip install -e .
@@ -89,9 +83,9 @@ limit      : Number of results, default 10
 
 All sources are free and public. No API keys required.
 
-- ClinicalTrials.gov — US National Library of Medicine
-- PubMed — National Center for Biotechnology Information
-- openFDA — US Food and Drug Administration
+- [ClinicalTrials.gov](https://clinicaltrials.gov) — US National Library of Medicine
+- [PubMed](https://pubmed.ncbi.nlm.nih.gov) — National Center for Biotechnology Information
+- [openFDA](https://open.fda.gov) — US Food and Drug Administration
 
 ---
 
