@@ -1,21 +1,39 @@
-```markdown
 <div align="center">
 
-<h1>Helix</h1>
+<br>
 
-<p>An MCP server that gives any AI model direct access to ClinicalTrials.gov, PubMed, and the FDA drug database.</p>
+# Helix
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-000000?style=flat-square)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.11+-000000?style=flat-square&logo=python&logoColor=white)](https://python.org)
-[![MCP](https://img.shields.io/badge/MCP-Compatible-000000?style=flat-square)](https://modelcontextprotocol.io)
+**MCP server connecting any AI model to the world's largest free healthcare databases.**
+
+<br>
+
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-111111?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-111111?style=flat-square)](LICENSE)
+[![MCP Compatible](https://img.shields.io/badge/MCP-compatible-111111?style=flat-square)](https://modelcontextprotocol.io)
+[![No API Key](https://img.shields.io/badge/no_API_key-required-111111?style=flat-square)](#data-sources)
+
+<br>
+
+```
+ Claude · GPT · Gemini · Copilot · any MCP client
+                      │
+               ┌──────┴──────┐
+               │    Helix    │
+               └──────┬──────┘
+         ┌────────────┼────────────┐
+         ▼            ▼            ▼
+  ClinicalTrials    PubMed      openFDA
+   400k+ trials   35M papers   Drug labels
+```
+
+<br>
 
 </div>
 
 ---
 
-Helix is a [Model Context Protocol](https://modelcontextprotocol.io) server. Install it once and every MCP-compatible AI model — Claude, GPT, Gemini, Copilot — gains structured access to 400,000+ clinical trials, 35 million research papers, and the complete FDA drug label database.
-
-No API keys. No subscriptions. All data is free and public.
+Helix is a [Model Context Protocol](https://modelcontextprotocol.io) server. Install it once and every MCP-compatible AI model gains structured, queryable access to three of the largest public healthcare databases on earth — without managing credentials, rate limits, or data wrangling.
 
 ---
 
@@ -27,7 +45,7 @@ cd Helix
 pip install -e .
 ```
 
-Add to `claude_desktop_config.json`:
+**Claude Desktop** — add to `claude_desktop_config.json` and restart:
 
 ```json
 {
@@ -39,12 +57,11 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
-Restart Claude Desktop. Then ask naturally:
+**Any MCP client** — Helix runs over stdio, compatible with any client that implements the MCP spec:
 
-> *Find recruiting trials for Type 2 Diabetes in London*
-> *Search Alzheimer's research from 2023 onward*
-> *Look up FDA information for metformin*
-> *Match a 45-year-old diabetic patient to eligible trials*
+```bash
+helix
+```
 
 ---
 
@@ -53,50 +70,106 @@ Restart Claude Desktop. Then ask naturally:
 | Tool | Database | What it does |
 |---|---|---|
 | `find_trials` | ClinicalTrials.gov | Find recruiting trials by condition and location |
-| `search_papers` | PubMed | Search peer-reviewed research with year filters |
-| `lookup_drug` | openFDA | Get drug indications, warnings, and manufacturer |
-| `match_eligibility` | ClinicalTrials.gov | Score and rank trials by patient eligibility fit |
+| `search_papers` | PubMed | Search peer-reviewed research with optional year range |
+| `lookup_drug` | openFDA | Get drug approvals, indications, warnings, manufacturer |
+| `match_eligibility` | ClinicalTrials.gov | Score and rank trials against a patient profile |
+
+---
+
+## Example Queries
+
+Once connected, prompt your AI model naturally:
+
+```
+Find recruiting clinical trials for Type 2 Diabetes in London
+```
+```
+Search Alzheimer's disease research published after 2023
+```
+```
+What does the FDA say about metformin?
+```
+```
+Match a 45-year-old patient with Type 2 Diabetes to eligible trials
+```
+
+---
+
+## Output Format
+
+Each tool returns clean, structured objects ready for any model to reason about.
+
+**`find_trials` — one result:**
+
+```json
+{
+  "id": "NCT04800835",
+  "title": "Semaglutide vs Placebo in Patients With Type 2 Diabetes and CKD",
+  "status": "RECRUITING",
+  "phase": ["PHASE3"],
+  "minimumAge": "18 Years",
+  "maximumAge": "75 Years",
+  "contactName": "Study Coordinator",
+  "contactEmail": "trials@site.org",
+  "url": "https://clinicaltrials.gov/study/NCT04800835"
+}
+```
+
+**`match_eligibility` — one result:**
+
+```json
+{
+  "id": "NCT04800835",
+  "title": "Semaglutide vs Placebo in Patients With Type 2 Diabetes and CKD",
+  "matchScore": 85,
+  "minimumAge": "18 Years",
+  "maximumAge": "75 Years",
+  "url": "https://clinicaltrials.gov/study/NCT04800835"
+}
+```
 
 ---
 
 ## Reference
 
-### find_trials
+### `find_trials`
 
-| Parameter | Type | Required | Default |
+| Parameter | Type | Default | Notes |
 |---|---|---|---|
-| `condition` | string | yes | — |
-| `location` | string | no | — |
-| `limit` | integer | no | 10 |
+| `condition` | `string` | — | Required. Medical condition to search |
+| `location` | `string` | `null` | City or country filter |
+| `limit` | `int` | `10` | Max 50 |
 
-### search_papers
+### `search_papers`
 
-| Parameter | Type | Required | Default |
+| Parameter | Type | Default | Notes |
 |---|---|---|---|
-| `topic` | string | yes | — |
-| `yearFrom` | integer | no | — |
-| `yearTo` | integer | no | — |
-| `limit` | integer | no | 10 |
+| `topic` | `string` | — | Required. Research topic |
+| `yearFrom` | `int` | `null` | Start year filter |
+| `yearTo` | `int` | `null` | End year filter |
+| `limit` | `int` | `10` | Max 50 |
 
-### lookup_drug
+### `lookup_drug`
 
-| Parameter | Type | Required | Default |
+| Parameter | Type | Default | Notes |
 |---|---|---|---|
-| `name` | string | yes | — |
-| `limit` | integer | no | 5 |
+| `name` | `string` | — | Required. Brand or generic drug name |
+| `limit` | `int` | `5` | Max 50 |
 
-### match_eligibility
+### `match_eligibility`
 
-| Parameter | Type | Required | Default |
+| Parameter | Type | Default | Notes |
 |---|---|---|---|
-| `condition` | string | yes | — |
-| `age` | integer | yes | — |
-| `location` | string | no | — |
-| `limit` | integer | no | 10 |
+| `condition` | `string` | — | Required. Medical condition |
+| `age` | `int` | — | Required. Patient age in years |
+| `location` | `string` | `null` | City or country filter |
+| `limit` | `int` | `10` | Max 50 |
 
 ---
 
 ## Data Sources
+
+All sources are free, public, and require no authentication.
 
 | Source | Scale | Maintained by |
 |---|---|---|
@@ -110,20 +183,20 @@ Restart Claude Desktop. Then ask naturally:
 
 ```
 src/helix/
-├── server.py            MCP server, tool registration
-├── config.py            All configuration
+├── server.py            MCP server entry point, tool registration
+├── config.py            All configuration, one place
 ├── tools/
 │   ├── trials.py        find_trials
 │   ├── pubmed.py        search_papers
 │   ├── fda.py           lookup_drug
 │   └── eligibility.py   match_eligibility
 ├── clients/
-│   ├── trialsClient.py
-│   ├── pubmedClient.py
-│   └── fdaClient.py
+│   ├── trialsClient.py  ClinicalTrials.gov API v2
+│   ├── pubmedClient.py  NCBI Entrez API
+│   └── fdaClient.py     openFDA label API
 └── utils/
-    ├── formatter.py     Shapes raw API responses
-    └── validator.py     Input validation
+    ├── formatter.py     Shapes raw API responses into clean objects
+    └── validator.py     Input validation via Pydantic
 ```
 
 ---
