@@ -14,7 +14,7 @@
 [![MCP Compatible](https://img.shields.io/badge/MCP-compatible-8b5cf6?style=flat-square)](https://modelcontextprotocol.io)
 [![PyPI](https://img.shields.io/badge/PyPI-helix--mcp-f97316?style=flat-square)](https://pypi.org/project/helix-mcp/)
 [![Version](https://img.shields.io/badge/version-1.5.0-f97316?style=flat-square)](CHANGELOG.md)
-[![HuggingFace](https://img.shields.io/badge/demo-HuggingFace-yellow?style=flat-square)](https://huggingface.co/spaces/Al1Abdullah/Helix)
+[![HuggingFace](https://img.shields.io/badge/demo-live-yellow?style=flat-square)](https://al1abdullah-helix.hf.space)
 
 <br/>
 
