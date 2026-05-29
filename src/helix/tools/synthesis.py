@@ -2,17 +2,20 @@
 Helix synthesis pipeline — deterministic weighted vector scoring.
 
 final_score = 100 * (
-    0.35 * condition_match +
-    0.30 * eligibility_fit +
-    0.20 * evidence_support +
-    0.15 * trial_phase_maturity
+    0.35 * condition_match +        # BM25 relevance: condition vs trial corpus
+    0.30 * eligibility_fit +        # Age-window centrality score
+    0.20 * evidence_support +       # PubMed evidence coverage
+    0.15 * trial_phase_maturity     # Trial phase score
 )
 All sub-scores normalized to [0, 1]. Results cached 5 min per
 (condition, age, location, sex).
 
-v1.3.0: expanded_from populated in ClinicalInsight when abbreviation is resolved.
+v1.5.0: BM25 corpus scoring replaces token overlap for condition_match.
+        NLM MeSH resolution applied before PubMed queries.
+v1.4.0: sex exclusions visible in excludedTrials.
+v1.3.0: expanded_from populated in ClinicalInsight.
 v1.2.0: synonym expansion + sex param + _hard_gate sex check.
-v1.1.0: eligibility_fit computes age-window centrality (was hardcoded 1.0).
+v1.1.0: eligibility_fit computes age-window centrality.
 """
 import asyncio
 import time
@@ -24,6 +27,7 @@ from helix.utils.formatter import Formatter
 from helix.config.weights import WEIGHTS
 from helix.cache import synthesis_cache
 from helix.logger import get_logger
+from rank_bm25 import BM25Okapi
 from helix.models import (
     TrialProfile, ScoreVector, ExplainabilityVector,
     ClinicalInsight, SynthesisResult, ExcludedTrial,
@@ -84,11 +88,29 @@ def _eligibility_fit_score(trial: dict, age: int) -> float:
     return round(max(0.5, 1.0 - dist * 0.5), 4)
 
 
-def buildTrialProfile(trial: dict, age: int, condition: str, papers: list, drugs: list) -> dict:
+def _buildBm25Scores(trials: list[dict], condition: str) -> list[float]:
+    """
+    Compute BM25 relevance scores for all trials against the condition query.
+    Builds the index across the full trial corpus so IDF is computed correctly.
+    Returns normalized scores in [0, 1] preserving relative ranking.
+    """
+    if not trials or not condition:
+        return [0.5] * len(trials)
+    corpus = [
+        ((t.get("title") or "") + " " + (t.get("summary") or "")).lower().split()
+        for t in trials
+    ]
+    corpus = [doc if doc else ["_empty_"] for doc in corpus]
+    bm25 = BM25Okapi(corpus)
+    raw = bm25.get_scores(condition.lower().split())
+    peak = float(max(raw)) if max(raw) > 0 else 1.0
+    return [round(float(s) / peak, 4) for s in raw]
+
+
+def buildTrialProfile(trial: dict, age: int, condition: str, papers: list, drugs: list, bm25Score: float = 0.5) -> dict:
     cond_tok  = set((condition or "").lower().split())
-    title_tok = set((trial.get("title") or "").lower().split())
-    overlap   = len(cond_tok & title_tok)
-    cond_m    = _norm(overlap, max(len(cond_tok), 1))
+    overlap   = int(bm25Score * 10)
+    cond_m    = bm25Score
 
     ev_hits = 0
     for p in papers:
@@ -210,8 +232,12 @@ async def synthesizeEvidence(
                 exclusion_reason=reason,
             ).model_dump())
 
+    bm25Scores = _buildBm25Scores(eligible, condition)
     profiles = sorted(
-        [buildTrialProfile(t, age, condition, papers or [], drugs) for t in eligible],
+        [
+            buildTrialProfile(t, age, condition, papers or [], drugs, bm25Score=bm25Scores[i])
+            for i, t in enumerate(eligible)
+        ],
         key=lambda p: p.get("final_score", 0.0),
         reverse=True,
     )

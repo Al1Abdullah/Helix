@@ -42,7 +42,7 @@ app.add_middleware(
 )
 
 _WEIGHT_DESCRIPTIONS = {
-    "condition_match":      "Token overlap between patient condition and trial title (0–1)",
+    "condition_match":      "BM25 relevance score: condition query vs full trial corpus (0–1)",
     "eligibility_fit":      "Age-window centrality: 1.0=center, 0.5=edge, 0.75=open enrollment",
     "evidence_support":     "Fraction of PubMed papers matching condition keywords (0–1)",
     "trial_phase_maturity": "Phase 3/4=1.0, Phase 2=0.6, Phase 1=0.3, unknown=0.5",

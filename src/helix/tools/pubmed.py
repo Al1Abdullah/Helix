@@ -1,6 +1,7 @@
 from helix.clients.pubmedClient import PubMedClient
 from helix.utils.formatter import Formatter
 from helix.utils.synonyms import expand
+from helix.utils.mesh import resolveMeSH
 from helix.cache import papers_cache
 from helix.logger import get_logger
 
@@ -20,6 +21,7 @@ async def searchPapers(
     Cached 10 min. Never raises.
     """
     topic = expand(topic)
+    topic = await resolveMeSH(topic)
     key = f"papers:{topic.lower().strip()}:{yearFrom}:{yearTo}:{limit}"
     cached = await papers_cache.get(key)
     if cached is not None:

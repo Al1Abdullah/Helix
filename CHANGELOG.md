@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.5.0] — 2026-05-29
+
+### Added
+- **NLM MeSH term resolution** (`src/helix/utils/mesh.py`) — conditions are now resolved
+  to authoritative NLM MeSH descriptor labels before PubMed queries. "Type 2 Diabetes"
+  becomes "Diabetes Mellitus, Type 2" — the exact vocabulary PubMed indexes against.
+  Falls back silently to the original string if the API is unreachable. Zero new
+  dependencies beyond httpx already in the stack.
+- **BM25 corpus scoring** — `condition_match` sub-score now uses BM25Okapi (rank-bm25)
+  built across the full trial corpus. IDF is computed correctly across all fetched
+  trials, giving semantically accurate relevance ranking instead of simple token overlap.
+  Normalized to [0, 1] preserving relative order.
+- **PyPI packaging** — package renamed to `helix-mcp` with proper classifiers, keywords,
+  and project URLs. `pip install helix-mcp` now works.
+- **HuggingFace Space** (`spaces/`) — Gradio demo app for live synthesis without local
+  setup. Mirrors the full synthesis pipeline with condition, age, location, and sex inputs.
+
+### Changed
+- `synthesis.py` module docstring updated to reflect BM25 scoring.
+- `api.py` weight description for `condition_match` updated from "token overlap" to
+  "BM25 relevance score".
+
 ## [1.4.0] — 2026-05-29
 
 ### Fixed
